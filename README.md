@@ -3,7 +3,7 @@
 Personal lead gen & automation tool. React 18 + Tailwind v4 frontend, Express backend.
 
 **Live:**
-- Frontend: https://leadflow-rho-mauve.vercel.app
+- Frontend: https://leadflowtool.vercel.app
 - Repo: https://github.com/Humera-png/leadflow
 
 ## Run it locally
