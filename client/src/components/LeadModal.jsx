@@ -1,23 +1,25 @@
 import { useState } from "react";
 import Modal from "./Modal.jsx";
+import { STATUS_LABELS } from "./StatusBadge.jsx";
 
-const STATUSES = ["cold", "warm", "hot", "customer", "rejected"];
+const STATUSES = ["cold", "warm", "hot", "followup", "rejected", "customer"];
 const DEAL_STATUSES = ["Pending", "Won", "Lost"];
 
+// Edit-only modal (creation lives in QuickAddModal.jsx, which exposes more fields
+// up front). `lead` is always required here.
 export default function LeadModal({ lead, onClose, onSave }) {
-  const isEdit = Boolean(lead);
   const [form, setForm] = useState({
-    name: lead?.name ?? "",
-    company: lead?.company ?? "",
-    email: lead?.email ?? "",
-    phone: lead?.phone ?? "",
-    linkedinUrl: lead?.linkedinUrl ?? "",
-    icp: lead?.icp ?? false,
-    status: lead?.status ?? "cold",
-    notes: lead?.notes ?? "",
-    dealStatus: lead?.dealStatus ?? "Pending",
-    dealValue: lead?.dealValue ?? 0,
-    nextAction: lead?.nextAction ?? "",
+    name: lead.name,
+    company: lead.company,
+    email: lead.email,
+    phone: lead.phone ?? "",
+    linkedinUrl: lead.linkedinUrl ?? "",
+    icp: lead.icp ?? false,
+    status: lead.status,
+    notes: lead.notes ?? "",
+    dealStatus: lead.dealStatus ?? "Pending",
+    dealValue: lead.dealValue ?? 0,
+    nextAction: lead.nextAction ?? "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -45,7 +47,7 @@ export default function LeadModal({ lead, onClose, onSave }) {
   };
 
   return (
-    <Modal title={isEdit ? "Edit Lead" : "Add New Lead"} onClose={onClose}>
+    <Modal title="Edit Lead" onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Name *">
@@ -71,7 +73,7 @@ export default function LeadModal({ lead, onClose, onSave }) {
             <select className="input" value={form.status} onChange={update("status")}>
               {STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {s}
+                  {STATUS_LABELS[s]}
                 </option>
               ))}
             </select>
@@ -85,33 +87,29 @@ export default function LeadModal({ lead, onClose, onSave }) {
           <textarea className="input" rows={3} value={form.notes} onChange={update("notes")} />
         </Field>
 
-        {isEdit && (
-          <>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Deal Status">
-                <select className="input" value={form.dealStatus} onChange={update("dealStatus")}>
-                  {DEAL_STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Deal Value (₹)">
-                <input
-                  className="input"
-                  type="number"
-                  min="0"
-                  value={form.dealValue}
-                  onChange={(e) => setForm((f) => ({ ...f, dealValue: Number(e.target.value) }))}
-                />
-              </Field>
-            </div>
-            <Field label="Next Action">
-              <input className="input" value={form.nextAction} onChange={update("nextAction")} />
-            </Field>
-          </>
-        )}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Deal Status">
+            <select className="input" value={form.dealStatus} onChange={update("dealStatus")}>
+              {DEAL_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Deal Value (₹)">
+            <input
+              className="input"
+              type="number"
+              min="0"
+              value={form.dealValue}
+              onChange={(e) => setForm((f) => ({ ...f, dealValue: Number(e.target.value) }))}
+            />
+          </Field>
+        </div>
+        <Field label="Next Action">
+          <input className="input" value={form.nextAction} onChange={update("nextAction")} />
+        </Field>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
@@ -120,7 +118,7 @@ export default function LeadModal({ lead, onClose, onSave }) {
             Cancel
           </button>
           <button type="submit" disabled={saving} className="btn-primary">
-            {saving ? "Saving..." : isEdit ? "Save changes" : "Add lead"}
+            {saving ? "Saving..." : "Save changes"}
           </button>
         </div>
       </form>

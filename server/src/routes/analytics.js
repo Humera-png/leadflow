@@ -4,7 +4,7 @@ import { leads, sequences, meetings, conversations, emailTemplates } from "../da
 const router = Router();
 
 function countByStatus() {
-  const counts = { cold: 0, warm: 0, hot: 0, customer: 0, rejected: 0 };
+  const counts = { cold: 0, warm: 0, hot: 0, followup: 0, rejected: 0, customer: 0 };
   for (const lead of leads.all()) {
     if (counts[lead.status] !== undefined) counts[lead.status]++;
   }
@@ -27,6 +27,7 @@ router.get("/dashboard", (req, res) => {
     warmLeads: counts.warm,
     hotLeads: counts.hot,
     customers: counts.customer,
+    followupLeads: counts.followup,
     rejectedLeads: counts.rejected,
     callsBooked,
     dealsClosed,
@@ -44,6 +45,20 @@ router.get("/funnel", (req, res) => {
     { stage: "Warm", count: counts.warm },
     { stage: "Hot", count: counts.hot },
     { stage: "Customer", count: counts.customer },
+  ]);
+});
+
+// Full 6-status breakdown for the Analytics page (separate from the 4-stage funnel,
+// which intentionally only tracks the Cold -> Warm -> Hot -> Customer conversion path).
+router.get("/status-breakdown", (req, res) => {
+  const counts = countByStatus();
+  res.json([
+    { status: "cold", label: "Cold", count: counts.cold },
+    { status: "warm", label: "Warm", count: counts.warm },
+    { status: "hot", label: "Hot", count: counts.hot },
+    { status: "followup", label: "Follow-up Later", count: counts.followup },
+    { status: "rejected", label: "Rejected", count: counts.rejected },
+    { status: "customer", label: "Customer", count: counts.customer },
   ]);
 });
 

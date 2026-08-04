@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
-import StatusBadge from "../components/StatusBadge.jsx";
-import LeadModal from "../components/LeadModal.jsx";
+import StatusBadge, { STATUS_LABELS } from "../components/StatusBadge.jsx";
+import QuickAddModal from "../components/QuickAddModal.jsx";
 import ImportModal from "../components/ImportModal.jsx";
 
-const STATUS_OPTIONS = ["", "cold", "warm", "hot", "customer", "rejected"];
+// Order mirrors the "life of a lead" progression, not alphabetical.
+const STATUS_ORDER = ["cold", "warm", "hot", "followup", "rejected", "customer"];
+const STATUS_OPTIONS = ["", ...STATUS_ORDER];
 
 function fmtDate(value) {
   return value ? new Date(value).toLocaleDateString() : "—";
@@ -21,6 +23,7 @@ export default function Leads() {
   const [selected, setSelected] = useState([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [toast, setToast] = useState(""); // success notification for Quick Add
 
   const load = () => {
     setLoading(true);
@@ -41,6 +44,13 @@ export default function Leads() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, search, icpOnly]);
 
+  // Auto-dismiss the "lead added" toast after a few seconds.
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(""), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
   const toggleSelected = (id) => {
     setSelected((sel) => (sel.includes(id) ? sel.filter((s) => s !== id) : [...sel, id]));
   };
@@ -52,6 +62,7 @@ export default function Leads() {
   const addLead = async (form) => {
     await api.createLead(form);
     setShowAddModal(false);
+    setToast(`${form.name} added to Leads`);
     load();
   };
 
@@ -71,6 +82,12 @@ export default function Leads() {
 
   return (
     <div className="space-y-4">
+      {toast && (
+        <div className="fixed right-4 top-4 z-50 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg">
+          ✓ {toast}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Leads</h1>
@@ -96,7 +113,7 @@ export default function Leads() {
         <select className="input w-auto" value={status} onChange={(e) => setStatus(e.target.value)}>
           {STATUS_OPTIONS.map((s) => (
             <option key={s} value={s}>
-              {s ? s[0].toUpperCase() + s.slice(1) : "All statuses"}
+              {s ? STATUS_LABELS[s] : "All statuses"}
             </option>
           ))}
         </select>
@@ -119,9 +136,9 @@ export default function Leads() {
               <option value="" disabled>
                 Change status...
               </option>
-              {STATUS_OPTIONS.filter(Boolean).map((s) => (
+              {STATUS_ORDER.map((s) => (
                 <option key={s} value={s}>
-                  {s}
+                  {STATUS_LABELS[s]}
                 </option>
               ))}
             </select>
@@ -156,6 +173,7 @@ export default function Leads() {
               <th className="px-4 py-2.5 text-left font-medium text-slate-500">Last Reply</th>
               <th className="px-4 py-2.5 text-left font-medium text-slate-500">Call Booked</th>
               <th className="px-4 py-2.5 text-left font-medium text-slate-500">Deal Value</th>
+              <th className="px-4 py-2.5 text-left font-medium text-slate-500">Next Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -197,11 +215,12 @@ export default function Leads() {
                 <td className="px-4 py-2.5 text-slate-700">
                   {lead.dealValue ? `₹${Number(lead.dealValue).toLocaleString("en-IN")}` : "—"}
                 </td>
+                <td className="px-4 py-2.5 text-slate-500">{lead.nextAction || "—"}</td>
               </tr>
             ))}
             {!loading && leads.length === 0 && (
               <tr>
-                <td colSpan={12} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={13} className="px-4 py-8 text-center text-slate-500">
                   No leads match your filters.
                 </td>
               </tr>
@@ -210,7 +229,7 @@ export default function Leads() {
         </table>
       </div>
 
-      {showAddModal && <LeadModal onClose={() => setShowAddModal(false)} onSave={addLead} />}
+      {showAddModal && <QuickAddModal onClose={() => setShowAddModal(false)} onSave={addLead} />}
       {showImportModal && (
         <ImportModal onClose={() => setShowImportModal(false)} onImported={load} />
       )}

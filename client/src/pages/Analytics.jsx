@@ -3,6 +3,7 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -13,16 +14,33 @@ import {
 } from "recharts";
 import { api } from "../api/client.js";
 
+// Matches StatusBadge.jsx's palette so a status reads the same color everywhere.
+const STATUS_COLORS = {
+  cold: "#94a3b8",
+  warm: "#f59e0b",
+  hot: "#f43f5e",
+  followup: "#0ea5e9",
+  rejected: "#ef4444",
+  customer: "#10b981",
+};
+
 export default function Analytics() {
   const [funnel, setFunnel] = useState([]);
+  const [statusBreakdown, setStatusBreakdown] = useState([]);
   const [conversion, setConversion] = useState([]);
   const [templatePerf, setTemplatePerf] = useState([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    Promise.all([api.getFunnel(), api.getConversion(), api.getTemplatePerformance()])
-      .then(([f, c, t]) => {
+    Promise.all([
+      api.getFunnel(),
+      api.getStatusBreakdown(),
+      api.getConversion(),
+      api.getTemplatePerformance(),
+    ])
+      .then(([f, sb, c, t]) => {
         setFunnel(f);
+        setStatusBreakdown(sb);
         setConversion(c);
         setTemplatePerf(t);
       })
@@ -36,16 +54,35 @@ export default function Analytics() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Analytics</h1>
-          <p className="text-sm text-slate-500">Funnel, conversion, and template performance.</p>
+          <p className="text-sm text-slate-500">Status breakdown, funnel, conversion, and template performance.</p>
         </div>
         <a className="btn-secondary" href={api.exportLeadsCsvUrl()} download>
           Export leads CSV
         </a>
       </div>
 
+      <div className="card p-5">
+        <h2 className="mb-3 text-sm font-semibold text-slate-900">Leads by Status</h2>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={statusBreakdown}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+            <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
+            <Tooltip />
+            <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+              {statusBreakdown.map((s) => (
+                <Cell key={s.status} fill={STATUS_COLORS[s.status] ?? "#6366f1"} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="card p-5">
-          <h2 className="mb-3 text-sm font-semibold text-slate-900">Lead Funnel</h2>
+          <h2 className="mb-3 text-sm font-semibold text-slate-900">
+            Conversion Funnel <span className="font-normal text-slate-400">(Cold → Warm → Hot → Customer)</span>
+          </h2>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={funnel}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />

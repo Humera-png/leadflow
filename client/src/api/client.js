@@ -63,6 +63,7 @@ export const api = {
   // Analytics
   getDashboard: () => request("/analytics/dashboard"),
   getFunnel: () => request("/analytics/funnel"),
+  getStatusBreakdown: () => request("/analytics/status-breakdown"),
   getConversion: () => request("/analytics/conversion"),
   getTemplatePerformance: () => request("/analytics/templates"),
 };

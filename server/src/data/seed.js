@@ -51,6 +51,7 @@ const SAMPLE_LEADS = [
   { name: "Sofia Marin", company: "Hearthstone Realty", email: "sofia@hearthstonerealty.com", phone: "555-0106", linkedinUrl: "https://linkedin.com/in/sofiamarin", icp: false, status: "rejected", daysAgo: 20 },
   { name: "Dev Patel", company: "Ridgeline Manufacturing", email: "dev@ridgelinemfg.com", phone: "555-0107", linkedinUrl: "https://linkedin.com/in/devpatel", icp: true, status: "warm", daysAgo: 8 },
   { name: "Amara Okafor", company: "Glasswing Consulting", email: "amara@glasswing.co", phone: "555-0108", linkedinUrl: "https://linkedin.com/in/amaraokafor", icp: true, status: "cold", daysAgo: 2 },
+  { name: "Wesley Grant", company: "Northfield Logistics", email: "wesley@northfieldlogistics.com", phone: "555-0109", linkedinUrl: "https://linkedin.com/in/wesleygrant", icp: true, status: "followup", daysAgo: 15 },
 ];
 
 function baseLeadFields(dateAdded) {

@@ -7,7 +7,8 @@ import { onLeadCreated, hydrateFromImport } from "../services/automation.js";
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
-const VALID_STATUSES = ["cold", "warm", "hot", "customer", "rejected"];
+// "followup" = they said "not now, maybe later" — distinct from "rejected" (hard no).
+const VALID_STATUSES = ["cold", "warm", "hot", "followup", "rejected", "customer"];
 const VALID_DEAL_STATUSES = ["Pending", "Won", "Lost"];
 
 function newLeadDefaults() {
@@ -46,6 +47,16 @@ function parseNumber(value, fallback = 0) {
   const cleaned = String(value).replace(/[^0-9.-]/g, "");
   const n = parseFloat(cleaned);
   return Number.isNaN(n) ? fallback : n;
+}
+
+// Accepts loose spreadsheet text ("Follow-up Later", "follow up later") and maps it
+// to our internal status slug. Falls back to "cold" for anything unrecognized.
+const STATUS_ALIASES = Object.fromEntries(
+  VALID_STATUSES.map((s) => [s, s]).concat([["followuplater", "followup"]])
+);
+function normalizeStatus(raw) {
+  const key = String(raw ?? "").toLowerCase().replace(/[^a-z]/g, "");
+  return STATUS_ALIASES[key] ?? "cold";
 }
 
 router.get("/", (req, res) => {
@@ -137,9 +148,7 @@ router.post("/import-csv", upload.single("file"), (req, res) => {
       continue;
     }
 
-    const status = VALID_STATUSES.includes(String(row.Status).toLowerCase())
-      ? String(row.Status).toLowerCase()
-      : "cold";
+    const status = normalizeStatus(row.Status);
     const dealStatus = VALID_DEAL_STATUSES.includes(row["Deal Status (Won/Lost/Pending)"])
       ? row["Deal Status (Won/Lost/Pending)"]
       : "Pending";
@@ -189,11 +198,31 @@ router.get("/:id", (req, res) => {
   res.json(lead);
 });
 
+// Powers both the plain "Add Lead" flow and the richer Quick Add modal (which can
+// pre-fill status/reply/deal info for a lead that already has some history).
 router.post("/", (req, res) => {
-  const { name, company, email, phone, linkedinUrl, icp, notes } = req.body;
+  const {
+    name,
+    company,
+    email,
+    phone,
+    linkedinUrl,
+    icp,
+    notes,
+    status,
+    messageSent, // Quick Add's "message sent or not" toggle
+    lastReplyDate,
+    replyMessage,
+    nextAction,
+    dealStatus,
+    dealValue,
+  } = req.body;
   if (!name || !email) {
     return res.status(400).json({ error: "name and email are required" });
   }
+
+  const resolvedStatus = VALID_STATUSES.includes(status) ? status : "cold";
+  const now = new Date().toISOString();
 
   const lead = leads.insert({
     name,
@@ -202,13 +231,29 @@ router.post("/", (req, res) => {
     phone: phone ?? "",
     linkedinUrl: linkedinUrl ?? "",
     icp: Boolean(icp),
-    status: "cold",
-    dateAdded: new Date().toISOString(),
+    status: resolvedStatus,
+    dateAdded: now,
     notes: notes ?? "",
     ...newLeadDefaults(),
+    emailOneSentDate: messageSent ? now : null,
+    lastReplyDate: parseDateOrNull(lastReplyDate),
+    replyMessage: replyMessage ?? "",
+    nextAction: nextAction ?? "",
+    dealStatus: VALID_DEAL_STATUSES.includes(dealStatus) ? dealStatus : "Pending",
+    dealValue: parseNumber(dealValue, 0),
   });
 
-  onLeadCreated(lead);
+  // A brand-new, never-contacted cold lead hands off to the normal automation engine
+  // (schedules email #1 for tomorrow morning). Anything with prior history — already
+  // emailed, already replied, or starting at a later status — skips auto-send and just
+  // gets its Sequence/Conversation records hydrated instead, same as a CSV import.
+  const isFreshLead = resolvedStatus === "cold" && !messageSent && !lastReplyDate;
+  if (isFreshLead) {
+    onLeadCreated(lead);
+  } else {
+    hydrateFromImport(lead);
+  }
+
   res.status(201).json(lead);
 });
 

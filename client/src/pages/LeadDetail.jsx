@@ -3,6 +3,9 @@ import { useNavigate, useParams, Link } from "react-router-dom";
 import { api } from "../api/client.js";
 import StatusBadge from "../components/StatusBadge.jsx";
 import LeadModal from "../components/LeadModal.jsx";
+import MarkAsRepliedModal from "../components/MarkAsRepliedModal.jsx";
+
+const DEAL_STATUSES = ["Pending", "Won", "Lost"];
 
 function fmtDateTime(value) {
   return value ? new Date(value).toLocaleString() : "—";
@@ -20,6 +23,8 @@ function nextActionSuggestion(lead, sequence) {
       return "They replied — schedule a discovery call?";
     case "hot":
       return "Call is booked — follow up right after with next steps.";
+    case "followup":
+      return "They said not now — check back later.";
     case "customer":
       return "Deal closed — keep them warm for referrals/upsells.";
     case "rejected":
@@ -37,6 +42,7 @@ export default function LeadDetail() {
   const [conversation, setConversation] = useState(null);
   const [error, setError] = useState("");
   const [showEdit, setShowEdit] = useState(false);
+  const [showReplyModal, setShowReplyModal] = useState(false);
   const [noteForm, setNoteForm] = useState({ notes: "", nextSteps: "" });
   const [busy, setBusy] = useState(false);
 
@@ -64,9 +70,19 @@ export default function LeadDetail() {
     }
   };
 
+  // Small inline edits (checkboxes/toggles/dropdowns below) go straight through
+  // PUT /api/leads/:id rather than opening the full Edit modal.
+  const quickUpdate = (patch) => runAction(() => api.updateLead(id, patch));
+
   const saveEdit = async (form) => {
     await api.updateLead(id, form);
     setShowEdit(false);
+    load();
+  };
+
+  const markAsReplied = async (message) => {
+    await api.simulateReply(id, message);
+    setShowReplyModal(false);
     load();
   };
 
@@ -131,13 +147,9 @@ export default function LeadDetail() {
           <button className="btn-secondary text-red-600" onClick={deleteLead}>
             Delete
           </button>
-          {lead.status === "cold" && (
-            <button
-              disabled={busy}
-              className="btn-secondary"
-              onClick={() => runAction(() => api.simulateReply(id, "Thanks for reaching out, tell me more!"))}
-            >
-              Simulate reply received
+          {(lead.status === "cold" || lead.status === "warm") && (
+            <button disabled={busy} className="btn-secondary" onClick={() => setShowReplyModal(true)}>
+              Mark as Replied
             </button>
           )}
           {(lead.status === "warm" || lead.status === "cold") && (
@@ -176,9 +188,24 @@ export default function LeadDetail() {
       <div className="card p-5">
         <h2 className="mb-3 text-sm font-semibold text-slate-900">Email Sequence</h2>
         <div className="grid gap-3 sm:grid-cols-3">
-          <EmailStep label="Email 1" sentDate={lead.emailOneSentDate} opened={lead.email1Opened} />
-          <EmailStep label="Email 2" sentDate={lead.emailTwoSentDate} opened={lead.email2Opened} />
-          <EmailStep label="Email 3" sentDate={lead.emailThreeSentDate} opened={lead.email3Opened} />
+          <EmailStep
+            label="Email 1"
+            sentDate={lead.emailOneSentDate}
+            opened={lead.email1Opened}
+            onToggleOpened={(checked) => quickUpdate({ email1Opened: checked })}
+          />
+          <EmailStep
+            label="Email 2"
+            sentDate={lead.emailTwoSentDate}
+            opened={lead.email2Opened}
+            onToggleOpened={(checked) => quickUpdate({ email2Opened: checked })}
+          />
+          <EmailStep
+            label="Email 3"
+            sentDate={lead.emailThreeSentDate}
+            opened={lead.email3Opened}
+            onToggleOpened={(checked) => quickUpdate({ email3Opened: checked })}
+          />
         </div>
       </div>
 
@@ -246,7 +273,20 @@ export default function LeadDetail() {
         <h2 className="mb-3 text-sm font-semibold text-slate-900">Calendar</h2>
         <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
           <Info label="Calendar Link Sent" value={fmtDateTime(lead.calendarLinkSentDate)} />
-          <Info label="Call Booked" value={lead.callBooked ? "Yes" : "No"} />
+          <div>
+            <dt className="text-xs uppercase text-slate-400">Call Booked</dt>
+            <dd>
+              <label className="mt-0.5 inline-flex cursor-pointer items-center gap-2 text-slate-700">
+                <input
+                  type="checkbox"
+                  disabled={busy}
+                  checked={Boolean(lead.callBooked)}
+                  onChange={(e) => quickUpdate({ callBooked: e.target.checked })}
+                />
+                {lead.callBooked ? "Yes" : "No"}
+              </label>
+            </dd>
+          </div>
           <Info label="Meeting Date & Time" value={fmtDateTime(lead.meetingDatetime)} />
           <Info label="Call Duration" value={lead.callDuration ? `${lead.callDuration} mins` : "—"} />
         </dl>
@@ -256,7 +296,23 @@ export default function LeadDetail() {
       <div className="card p-5">
         <h2 className="mb-3 text-sm font-semibold text-slate-900">Deal</h2>
         <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-          <Info label="Deal Status" value={lead.dealStatus || "Pending"} />
+          <div>
+            <dt className="text-xs uppercase text-slate-400">Deal Status</dt>
+            <dd>
+              <select
+                className="input mt-0.5 w-auto"
+                disabled={busy}
+                value={lead.dealStatus || "Pending"}
+                onChange={(e) => quickUpdate({ dealStatus: e.target.value })}
+              >
+                {DEAL_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </dd>
+          </div>
           <Info label="Deal Value" value={lead.dealValue ? `₹${Number(lead.dealValue).toLocaleString("en-IN")}` : "—"} />
           <Info label="Next Action" value={lead.nextAction || "—"} />
           <Info label="Notes" value={lead.notes || "—"} />
@@ -264,6 +320,13 @@ export default function LeadDetail() {
       </div>
 
       {showEdit && <LeadModal lead={lead} onClose={() => setShowEdit(false)} onSave={saveEdit} />}
+      {showReplyModal && (
+        <MarkAsRepliedModal
+          leadName={lead.name}
+          onClose={() => setShowReplyModal(false)}
+          onConfirm={markAsReplied}
+        />
+      )}
     </div>
   );
 }
@@ -277,7 +340,7 @@ function Info({ label, value }) {
   );
 }
 
-function EmailStep({ label, sentDate, opened }) {
+function EmailStep({ label, sentDate, opened, onToggleOpened }) {
   const done = Boolean(sentDate);
   return (
     <div className={`rounded-lg border p-3 ${done ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}>
@@ -285,7 +348,12 @@ function EmailStep({ label, sentDate, opened }) {
       <p className="mt-1 text-xs text-slate-500">
         {done ? new Date(sentDate).toLocaleString() : "Not sent yet"}
       </p>
-      {done && <p className="mt-1 text-xs text-slate-500">{opened ? "👁 Opened" : "Not opened yet"}</p>}
+      {done && (
+        <label className="mt-1 flex cursor-pointer items-center gap-1.5 text-xs text-slate-500">
+          <input type="checkbox" checked={Boolean(opened)} onChange={(e) => onToggleOpened(e.target.checked)} />
+          Opened
+        </label>
+      )}
     </div>
   );
 }

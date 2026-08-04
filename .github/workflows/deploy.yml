@@ -1,0 +1,33 @@
+# Build/syntax validation on every push and PR. This does NOT deploy — Vercel (frontend)
+# and Railway/Render (backend) auto-deploy via their own native GitHub integrations once
+# connected (see README.md "Deployment"). Running a second deploy path from here would
+# race with those and could double-deploy on every push.
+name: Deploy Checks
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install & build client
+        working-directory: client
+        run: |
+          npm install
+          npm run build
+
+      - name: Install & syntax-check server
+        working-directory: server
+        run: |
+          npm install
+          node --check src/index.js
