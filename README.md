@@ -4,6 +4,7 @@ Personal lead gen & automation tool. React 18 + Tailwind v4 frontend, Express ba
 
 **Live:**
 - Frontend: https://leadflowtool.vercel.app
+- Backend API: https://leadflow-production-a9e7.up.railway.app (Railway)
 - Repo: https://github.com/Humera-png/leadflow
 
 ## Run it locally
@@ -52,16 +53,27 @@ Already set up — this repo auto-tracks `master`. To push further changes:
 git add -A && git commit -m "..." && git push
 ```
 
-### 2. Backend → Railway or Render
+### 2. Backend → Railway
 
-1. New Project → Deploy from GitHub repo → select `leadflow`.
-2. **Root directory**: `server`
-3. **Start command**: `npm start`
-4. Environment variables (see `server/.env.example`):
-   - `CLIENT_ORIGIN` — your Vercel frontend URL (comma-separate multiple origins if needed), needed for CORS.
-   - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` / `GOOGLE_REFRESH_TOKEN` — only once you wire real Gmail/Calendar sending.
-   - `MONGODB_URI` — only once you connect MongoDB Atlas.
-5. Deploy, note the resulting URL. Auto-deploys on push once connected — no extra config.
+Already deployed (see live link above), project `harmonious-wholeness` → service `leadflow`.
+
+**Important:** this is deployed via `railway up` (uploads the local `server/` folder directly), **not** GitHub auto-deploy. Railway's GitHub integration builds from the repo root, and this is a monorepo (`client/` + `server/` both at root) — without per-service root-directory config it would try to build the wrong thing. The GitHub source was deliberately disconnected from this service to prevent a future `git push` from triggering a broken auto-rebuild.
+
+To redeploy the backend after making changes:
+
+```bash
+cd server && npx @railway/cli up -c
+```
+
+(First time on a new machine: `npx @railway/cli login` then `npx @railway/cli link` to select the `harmonious-wholeness` project / `leadflow` service.)
+
+Environment variables (see `server/.env.example`), set via `npx @railway/cli variable set KEY=value`:
+- `CLIENT_ORIGIN` — already set to the Vercel frontend URL (comma-separate multiple origins if needed).
+- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` / `GOOGLE_REFRESH_TOKEN` — only once you wire real Gmail/Calendar sending.
+- `MONGODB_URI` — only once you connect MongoDB Atlas.
+- `CALENDLY_API_TOKEN` / Calendly OAuth client credentials — once you finish registering the Calendly OAuth app and the `/api/calendly/callback` route is built.
+
+To get a public URL: `npx @railway/cli domain` (already done — see live link above).
 
 ### 3. Frontend → Vercel
 
@@ -83,9 +95,7 @@ To connect the Vercel project to this GitHub repo for native auto-deploy-on-push
 
 ### CI
 
-`.github/workflows/deploy.yml` runs a build/syntax check on every push and PR to `master` (validates the client builds and the server has no syntax errors). It does **not** perform the actual deploy — Vercel's and Railway/Render's own GitHub integrations do that, as described above; running deploys from both a custom Action and native git integration at once would double-deploy on every push.
-
-> Note: this file couldn't be pushed automatically from this environment (the `gh` OAuth token lacks the `workflow` scope GitHub requires for changes under `.github/workflows/`). Run `gh auth refresh -s workflow` once, then `git add .github && git commit -m "Add CI workflow" && git push`.
+`.github/workflows/deploy.yml` runs a build/syntax check on every push and PR to `master` (validates the client builds and the server has no syntax errors). It does **not** perform the actual deploy — the frontend redeploys via Vercel CLI and the backend via Railway CLI, both described above (neither is on GitHub auto-deploy, see the backend note on why).
 
 ## Next steps
 
