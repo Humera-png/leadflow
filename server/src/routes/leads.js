@@ -1,0 +1,257 @@
+import { Router } from "express";
+import multer from "multer";
+import Papa from "papaparse";
+import { leads, sequences, conversations } from "../data/store.js";
+import { onLeadCreated, hydrateFromImport } from "../services/automation.js";
+
+const router = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+
+const VALID_STATUSES = ["cold", "warm", "hot", "customer", "rejected"];
+const VALID_DEAL_STATUSES = ["Pending", "Won", "Lost"];
+
+function newLeadDefaults() {
+  return {
+    emailOneSentDate: null,
+    email1Opened: false,
+    emailTwoSentDate: null,
+    email2Opened: false,
+    emailThreeSentDate: null,
+    email3Opened: false,
+    lastReplyDate: null,
+    replyMessage: "",
+    calendarLinkSentDate: null,
+    callBooked: false,
+    meetingDatetime: null,
+    callDuration: null,
+    dealStatus: "Pending",
+    dealValue: 0,
+    nextAction: "",
+    lastUpdated: new Date().toISOString(),
+  };
+}
+
+function parseDateOrNull(value) {
+  if (!value || !String(value).trim()) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function parseYesNo(value) {
+  return ["yes", "true", "1"].includes(String(value ?? "").trim().toLowerCase());
+}
+
+function parseNumber(value, fallback = 0) {
+  if (value === null || value === undefined || value === "") return fallback;
+  const cleaned = String(value).replace(/[^0-9.-]/g, "");
+  const n = parseFloat(cleaned);
+  return Number.isNaN(n) ? fallback : n;
+}
+
+router.get("/", (req, res) => {
+  const { status, icp, company, search } = req.query;
+
+  let results = leads.all();
+  if (status) results = results.filter((l) => l.status === status);
+  if (icp) results = results.filter((l) => String(l.icp) === String(icp === "true"));
+  if (company) {
+    results = results.filter((l) =>
+      l.company?.toLowerCase().includes(String(company).toLowerCase())
+    );
+  }
+  if (search) {
+    const q = String(search).toLowerCase();
+    results = results.filter(
+      (l) =>
+        l.name?.toLowerCase().includes(q) ||
+        l.company?.toLowerCase().includes(q) ||
+        l.email?.toLowerCase().includes(q)
+    );
+  }
+
+  results = [...results].sort(
+    (a, b) => new Date(b.dateAdded) - new Date(a.dateAdded)
+  );
+
+  res.json(results);
+});
+
+// CSV export/import must be declared before "/:id" so they aren't swallowed by that route.
+router.get("/export-csv", (req, res) => {
+  const rows = leads.all().map((l) => ({
+    Name: l.name,
+    Company: l.company,
+    Email: l.email,
+    Phone: l.phone,
+    "LinkedIn URL": l.linkedinUrl,
+    Status: l.status,
+    "Date Added": l.dateAdded,
+    "Email One Sent(Date)": l.emailOneSentDate ?? "",
+    "Email 1 Opened": l.email1Opened ? "Yes" : "No",
+    "Email Two Sent(Date)": l.emailTwoSentDate ?? "",
+    "Email 2 Opened": l.email2Opened ? "Yes" : "No",
+    "Email Three Sent(Date)": l.emailThreeSentDate ?? "",
+    "Email 3 Opened": l.email3Opened ? "Yes" : "No",
+    "Last Reply (Date)": l.lastReplyDate ?? "",
+    "Reply Message": l.replyMessage ?? "",
+    "Calendar Link Sent (Date)": l.calendarLinkSentDate ?? "",
+    "Call Booked (Yes/No)": l.callBooked ? "Yes" : "No",
+    "Meeting Date & Time": l.meetingDatetime ?? "",
+    "Call Duration (mins)": l.callDuration ?? "",
+    "Deal Status (Won/Lost/Pending)": l.dealStatus ?? "Pending",
+    "Deal Value (₹)": l.dealValue ?? 0,
+    Notes: l.notes ?? "",
+    "Next Action": l.nextAction ?? "",
+    "Last Updated": l.lastUpdated ?? "",
+  }));
+
+  const csv = Papa.unparse(rows);
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="leadflow-leads-${new Date().toISOString().slice(0, 10)}.csv"`
+  );
+  res.send(csv);
+});
+
+router.post("/import-csv", upload.single("file"), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No CSV file uploaded (field name: file)" });
+
+  const parsed = Papa.parse(req.file.buffer.toString("utf-8"), {
+    header: true,
+    skipEmptyLines: true,
+  });
+
+  if (parsed.errors?.length) {
+    return res.status(400).json({ error: "Failed to parse CSV", details: parsed.errors.slice(0, 5) });
+  }
+
+  let imported = 0;
+  let skipped = 0;
+
+  for (const row of parsed.data) {
+    const name = row.Name?.trim();
+    const email = row.Email?.trim();
+    if (!name || !email) {
+      skipped++;
+      continue;
+    }
+
+    const status = VALID_STATUSES.includes(String(row.Status).toLowerCase())
+      ? String(row.Status).toLowerCase()
+      : "cold";
+    const dealStatus = VALID_DEAL_STATUSES.includes(row["Deal Status (Won/Lost/Pending)"])
+      ? row["Deal Status (Won/Lost/Pending)"]
+      : "Pending";
+
+    const lead = leads.insert({
+      name,
+      company: row.Company ?? "",
+      email,
+      phone: row.Phone ?? "",
+      linkedinUrl: row["LinkedIn URL"] ?? "",
+      icp: false,
+      status,
+      dateAdded: parseDateOrNull(row["Date Added"]) ?? new Date().toISOString(),
+      notes: row.Notes ?? "",
+
+      emailOneSentDate: parseDateOrNull(row["Email One Sent(Date)"]),
+      email1Opened: parseYesNo(row["Email 1 Opened"]),
+      emailTwoSentDate: parseDateOrNull(row["Email Two Sent(Date)"]),
+      email2Opened: parseYesNo(row["Email 2 Opened"]),
+      emailThreeSentDate: parseDateOrNull(row["Email Three Sent(Date)"]),
+      email3Opened: parseYesNo(row["Email 3 Opened"]),
+
+      lastReplyDate: parseDateOrNull(row["Last Reply (Date)"]),
+      replyMessage: row["Reply Message"] ?? "",
+
+      calendarLinkSentDate: parseDateOrNull(row["Calendar Link Sent (Date)"]),
+      callBooked: parseYesNo(row["Call Booked (Yes/No)"]),
+      meetingDatetime: parseDateOrNull(row["Meeting Date & Time"]),
+      callDuration: row["Call Duration (mins)"] ? parseNumber(row["Call Duration (mins)"], null) : null,
+
+      dealStatus,
+      dealValue: parseNumber(row["Deal Value (₹)"], 0),
+      nextAction: row["Next Action"] ?? "",
+      lastUpdated: parseDateOrNull(row["Last Updated"]) ?? new Date().toISOString(),
+    });
+
+    hydrateFromImport(lead);
+    imported++;
+  }
+
+  res.status(201).json({ imported, skipped, total: parsed.data.length });
+});
+
+router.get("/:id", (req, res) => {
+  const lead = leads.get(req.params.id);
+  if (!lead) return res.status(404).json({ error: "Lead not found" });
+  res.json(lead);
+});
+
+router.post("/", (req, res) => {
+  const { name, company, email, phone, linkedinUrl, icp, notes } = req.body;
+  if (!name || !email) {
+    return res.status(400).json({ error: "name and email are required" });
+  }
+
+  const lead = leads.insert({
+    name,
+    company: company ?? "",
+    email,
+    phone: phone ?? "",
+    linkedinUrl: linkedinUrl ?? "",
+    icp: Boolean(icp),
+    status: "cold",
+    dateAdded: new Date().toISOString(),
+    notes: notes ?? "",
+    ...newLeadDefaults(),
+  });
+
+  onLeadCreated(lead);
+  res.status(201).json(lead);
+});
+
+router.put("/:id", (req, res) => {
+  const existing = leads.get(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Lead not found" });
+
+  const { _id, dateAdded, ...patch } = req.body;
+  const updated = leads.update(req.params.id, { ...patch, lastUpdated: new Date().toISOString() });
+  res.json(updated);
+});
+
+router.delete("/:id", (req, res) => {
+  const existing = leads.get(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Lead not found" });
+
+  leads.remove(req.params.id);
+  const sequence = sequences.findOne((s) => s.leadId === req.params.id);
+  if (sequence) sequences.remove(sequence._id);
+  const convo = conversations.findOne((c) => c.leadId === req.params.id);
+  if (convo) conversations.remove(convo._id);
+
+  res.status(204).end();
+});
+
+/** Bulk actions: change status or add a note-tag across multiple leads at once. */
+router.patch("/bulk", (req, res) => {
+  const { ids, status, tag } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: "ids array is required" });
+  }
+
+  const updated = ids.map((id) => {
+    const patch = { lastUpdated: new Date().toISOString() };
+    if (status) patch.status = status;
+    if (tag) {
+      const lead = leads.get(id);
+      patch.notes = lead ? `${lead.notes ? lead.notes + " " : ""}#${tag}` : `#${tag}`;
+    }
+    return leads.update(id, patch);
+  });
+
+  res.json(updated.filter(Boolean));
+});
+
+export default router;
