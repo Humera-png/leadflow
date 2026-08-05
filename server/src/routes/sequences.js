@@ -57,12 +57,12 @@ router.post("/:leadId/simulate-reply", (req, res) => {
   res.json(result);
 });
 
-router.post("/:leadId/book-call", (req, res) => {
+router.post("/:leadId/book-call", async (req, res) => {
   const { scheduledTime, duration } = req.body;
   if (!scheduledTime) {
     return res.status(400).json({ error: "scheduledTime is required" });
   }
-  const meeting = onCallBooked(req.params.leadId, { scheduledTime, duration });
+  const meeting = await onCallBooked(req.params.leadId, { scheduledTime, duration });
   if (!meeting) return res.status(404).json({ error: "Lead not found" });
   res.status(201).json(meeting);
 });

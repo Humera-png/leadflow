@@ -75,7 +75,7 @@ async function sendNextSequenceEmail(sequence) {
   if (!template) return null;
 
   const { subject, body } = renderTemplate(template, lead);
-  const { sentAt } = await sendEmail({ to: lead.email, subject, body });
+  const { sentAt } = await sendEmail({ to: lead.email, subject, body, leadId: lead._id });
 
   appendMessage(lead._id, {
     from: "you",
@@ -127,11 +127,11 @@ export function onReplyReceived(leadId, content) {
 }
 
 /** Step: call booked -> Calendar event created, lead goes hot. */
-export function onCallBooked(leadId, { scheduledTime, duration = 30 }) {
+export async function onCallBooked(leadId, { scheduledTime, duration = 30 }) {
   const lead = leads.get(leadId);
   if (!lead) return null;
 
-  const meeting = createEvent({ leadId, scheduledTime, duration });
+  const meeting = await createEvent({ leadId, scheduledTime, duration });
   const now = new Date().toISOString();
   touchLead(leadId, {
     status: "hot",

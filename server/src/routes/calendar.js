@@ -5,12 +5,12 @@ import { onCallBooked } from "../services/automation.js";
 
 const router = Router();
 
-router.post("/book", (req, res) => {
+router.post("/book", async (req, res) => {
   const { leadId, scheduledTime, duration } = req.body;
   if (!leadId || !scheduledTime) {
     return res.status(400).json({ error: "leadId and scheduledTime are required" });
   }
-  const meeting = onCallBooked(leadId, { scheduledTime, duration });
+  const meeting = await onCallBooked(leadId, { scheduledTime, duration });
   if (!meeting) return res.status(404).json({ error: "Lead not found" });
   res.status(201).json(meeting);
 });

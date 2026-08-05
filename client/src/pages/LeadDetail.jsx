@@ -6,7 +6,12 @@ import LeadModal from "../components/LeadModal.jsx";
 import MarkAsRepliedModal from "../components/MarkAsRepliedModal.jsx";
 
 const DEAL_STATUSES = ["Pending", "Won", "Lost"];
-const SOURCE_LABELS = { manual: "Added manually", import: "CSV import", webform: "Web form" };
+const SOURCE_LABELS = {
+  manual: "Added manually",
+  import: "CSV import",
+  webform: "Web form",
+  calendly: "Calendly booking",
+};
 
 function fmtDateTime(value) {
   return value ? new Date(value).toLocaleString() : "—";

@@ -29,9 +29,36 @@ Open http://localhost:5173.
 
 ## Current state
 
-- **Backend** (`server/`): data lives **in-memory** (resets on restart/redeploy) — swap `server/src/data/store.js` for Mongoose + MongoDB Atlas when ready; document shapes already match a real schema.
-- **Gmail / Google Calendar**: currently **mocked** — emails/events are logged to the server console and recorded in the data store, nothing is actually sent. Wire real sending in `server/src/services/emailService.js` and `server/src/services/calendarService.js` (marked with `TODO` comments), then set `GOOGLE_CLIENT_ID` / `GOOGLE_REFRESH_TOKEN` in `server/.env` (copy from `server/.env.example`).
-- **Calendly**: not connected — `Meetings` are created directly via the in-app "Book a call" action instead of a webhook.
+All four integrations below are **fully coded** — they run in mock mode with zero setup, and switch to the real thing automatically the moment their env vars are set (no code changes needed). See "Turning on real integrations" for exact setup steps per service.
+
+- **Data persistence**: in-memory by default (resets on restart/redeploy). Set `MONGODB_URI` and it becomes a write-through cache instead — reads still hit memory (fast, zero risk to existing code), every write also goes to MongoDB, and the app reloads everything from Mongo on boot. Data survives restarts once this is set.
+- **Gmail**: mocked (logged to console) until `GOOGLE_CLIENT_ID`/`SECRET`/`REFRESH_TOKEN` are set — then it really sends via the Gmail API as whichever account completed the one-time OAuth flow, with an invisible open-tracking pixel embedded (reuses the existing `/api/emails/:leadId/open` endpoint).
+- **Google Calendar**: same OAuth credentials — once set, "Book a call" creates a real event on your primary Google Calendar and emails a real invite to the lead.
+- **Calendly**: mocked until `CALENDLY_CLIENT_ID`/`SECRET`/tokens are set — then the Calendar page shows your real Calendly scheduling link, and real bookings on it automatically create/update leads via a webhook.
+
+## Turning on real integrations
+
+### Google (Gmail send + Calendar events)
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create a project (or use an existing one), enable the **Gmail API** and **Google Calendar API**.
+2. Create an OAuth Client ID (Application type: **Web application**). Add `GOOGLE_REDIRECT_URI`'s value (see `.env.example`) as an authorized redirect URI — locally that's `http://localhost:5000/api/auth/google/callback`, in production `https://leadflow-production-a9e7.up.railway.app/api/auth/google/callback`.
+3. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` (locally in `server/.env`, in production via `railway variable set`).
+4. Restart the server, then visit `/api/auth/google` in a browser (e.g. `https://leadflow-production-a9e7.up.railway.app/api/auth/google`) and sign in with whichever Google account you want sending email/creating events. It redirects back with a `GOOGLE_REFRESH_TOKEN` to copy.
+5. Set `GOOGLE_REFRESH_TOKEN`, restart. Check `GET /api/health` → `gmailConfigured`/`calendarConfigured` should now be `true`.
+
+### Calendly
+
+1. Finish (or redo) the OAuth app registration at Calendly's developer portal — redirect URI is `CALENDLY_REDIRECT_URI` from `.env.example`.
+2. Set `CALENDLY_CLIENT_ID`, `CALENDLY_CLIENT_SECRET`, `CALENDLY_REDIRECT_URI`.
+3. Restart, visit `/api/calendly/connect`, authorize. Copy the `CALENDLY_ACCESS_TOKEN`/`CALENDLY_REFRESH_TOKEN` it shows you into env vars, restart again.
+4. Visit `/api/calendly/setup-webhook` once (registers the webhook — needs `PUBLIC_BASE_URL` set to the backend's own public URL first, so Calendly knows where to send booking notifications).
+5. The Calendar page will now show your real scheduling link at the top.
+
+### MongoDB Atlas
+
+1. Create a free cluster at [mongodb.com/cloud/atlas](https://www.mongodb.com/cloud/atlas), create a database user, and allow network access from anywhere (or Railway's IP range).
+2. Copy the connection string, set it as `MONGODB_URI`.
+3. Restart — first boot with an empty database seeds the 3 templates once; every subsequent boot loads whatever's actually in Mongo instead.
 
 ## Embedding the capture form
 
@@ -88,9 +115,8 @@ cd server && npx @railway/cli up -c
 
 Environment variables (see `server/.env.example`), set via `npx @railway/cli variable set KEY=value`:
 - `CLIENT_ORIGIN` — already set to the Vercel frontend URL (comma-separate multiple origins if needed).
-- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` / `GOOGLE_REFRESH_TOKEN` — only once you wire real Gmail/Calendar sending.
-- `MONGODB_URI` — only once you connect MongoDB Atlas.
-- `CALENDLY_API_TOKEN` / Calendly OAuth client credentials — once you finish registering the Calendly OAuth app and the `/api/calendly/callback` route is built.
+- `PUBLIC_BASE_URL` — already set to this backend's own Railway URL (needed for the email tracking pixel and the Calendly webhook URL).
+- `GOOGLE_CLIENT_ID` / `SECRET` / `REDIRECT_URI` / `REFRESH_TOKEN`, `CALENDLY_CLIENT_ID` / `SECRET` / tokens, `MONGODB_URI` — see "Turning on real integrations" above.
 
 To get a public URL: `npx @railway/cli domain` (already done — see live link above).
 
@@ -118,6 +144,6 @@ To connect the Vercel project to this GitHub repo for native auto-deploy-on-push
 
 ## Next steps
 
-1. Wire real Gmail send + Calendar event creation using your Google OAuth credentials.
-2. Set up MongoDB Atlas and swap the in-memory store for Mongoose models.
-3. Add a Calendly webhook once you have API access.
+1. **Multi-user / client-facing (Phase 3)** — separate login per client, each seeing only their own leads, plus white-label branding. This is a genuinely separate architecture change (auth system, an ownership field added to every collection, protecting every route) rather than an incremental add — worth its own dedicated pass rather than bolting onto the integrations above.
+2. Real inbound reply *detection* (a Gmail webhook that notices when a lead replies and calls "Mark as Replied" automatically) — right now that's still a manual button; outbound send is real, inbound parsing isn't.
+3. Outbound prospecting (finding new leads matching your ICP via a paid B2B data API like Apollo/Hunter/Clearbit) — the capture form covers inbound; this would cover outbound.

@@ -1,9 +1,7 @@
+import { google } from "googleapis";
 import { newId } from "../utils/id.js";
-import { meetings } from "../data/store.js";
-
-const CALENDAR_CONFIGURED = Boolean(
-  process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_REFRESH_TOKEN
-);
+import { meetings, leads } from "../data/store.js";
+import { getAuthorizedClient, isGoogleConfigured } from "./googleAuth.js";
 
 const WORKDAY_START_HOUR = 9;
 const WORKDAY_END_HOUR = 17;
@@ -43,35 +41,55 @@ export function getAvailability() {
 /**
  * Creates a calendar event for a booked call. In MOCK mode this just creates
  * a Meeting record with a fake event id/link. Once Google OAuth env vars are
- * set, swap this for a real `calendar.events.insert` call.
+ * set, it creates a real event on your primary Google Calendar and emails a
+ * real invite to the lead (sendUpdates: "all").
  */
-export function createEvent({ leadId, scheduledTime, duration = 30 }) {
-  const eventId = newId();
-  const meeting = meetings.insert({
+export async function createEvent({ leadId, scheduledTime, duration = 30 }) {
+  const configured = isGoogleConfigured();
+  let calendarEventId = newId();
+  let recordingLink = null;
+
+  if (configured) {
+    const lead = leads.get(leadId);
+    const calendar = google.calendar({ version: "v3", auth: getAuthorizedClient() });
+    const endTime = new Date(new Date(scheduledTime).getTime() + duration * 60 * 1000).toISOString();
+
+    try {
+      const { data } = await calendar.events.insert({
+        calendarId: "primary",
+        sendUpdates: "all", // emails a real invite to attendees
+        requestBody: {
+          summary: `Discovery call with ${lead?.name ?? "lead"}`,
+          description: lead?.company ? `Re: ${lead.company}` : undefined,
+          start: { dateTime: scheduledTime },
+          end: { dateTime: endTime },
+          attendees: lead?.email ? [{ email: lead.email }] : [],
+        },
+      });
+      calendarEventId = data.id;
+      recordingLink = data.htmlLink ?? null;
+      console.log(`[calendar:live] event ${calendarEventId} created for lead ${leadId}`);
+    } catch (err) {
+      console.error("[calendar:live] event creation failed:", err.message);
+    }
+  } else {
+    console.log(`[calendar:mock] booked ${scheduledTime} (${duration}m) for lead ${leadId}`);
+  }
+
+  return meetings.insert({
     leadId,
     calendlyEventId: null,
-    calendarEventId: eventId,
+    calendarEventId,
     scheduledTime,
     duration,
     status: "scheduled",
     meetingNotes: "",
     followUpDate: null,
-    recordingLink: null,
-    mock: !CALENDAR_CONFIGURED,
+    recordingLink,
+    mock: !configured,
   });
-
-  if (!CALENDAR_CONFIGURED) {
-    console.log(
-      `[calendar:mock] booked ${scheduledTime} (${duration}m) for lead ${leadId}`
-    );
-  } else {
-    // TODO: real Google Calendar event creation via googleapis client
-    console.log(`[calendar:live-not-implemented] lead ${leadId}`);
-  }
-
-  return meeting;
 }
 
 export function isCalendarConfigured() {
-  return CALENDAR_CONFIGURED;
+  return isGoogleConfigured();
 }

@@ -10,13 +10,15 @@ export default function Calendar() {
   const [selectedSlot, setSelectedSlot] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [schedulingUrl, setSchedulingUrl] = useState(null);
 
   const load = () => {
-    Promise.all([api.getEvents(), api.getAvailability(), api.getLeads()])
-      .then(([ev, avail, ls]) => {
+    Promise.all([api.getEvents(), api.getAvailability(), api.getLeads(), api.getCalendlyBookingLink()])
+      .then(([ev, avail, ls, calendly]) => {
         setEvents(ev);
         setAvailability(avail);
         setLeads(ls);
+        setSchedulingUrl(calendly.schedulingUrl);
       })
       .catch((err) => setError(err.message));
   };
@@ -67,6 +69,18 @@ export default function Calendar() {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {schedulingUrl && (
+        <div className="card border-emerald-200 bg-emerald-50 p-5">
+          <h2 className="mb-1 text-sm font-semibold text-emerald-900">Your real Calendly booking link</h2>
+          <p className="text-sm text-emerald-800">
+            Share this with leads — bookings automatically create/update a lead here.
+          </p>
+          <a href={schedulingUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block break-all text-sm font-medium text-emerald-700 underline">
+            {schedulingUrl}
+          </a>
         </div>
       )}
 

@@ -15,7 +15,7 @@ router.post("/send", async (req, res) => {
   const lead = leads.get(leadId);
   if (!lead) return res.status(404).json({ error: "Lead not found" });
 
-  const result = await sendEmail({ to: lead.email, subject, body });
+  const result = await sendEmail({ to: lead.email, subject, body, leadId });
 
   const convo =
     conversations.findOne((c) => c.leadId === leadId) ??

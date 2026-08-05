@@ -60,6 +60,7 @@ export const api = {
   getAvailability: () => request("/calendar/availability"),
   getEvents: () => request("/calendar/events"),
   bookMeeting: (data) => request("/calendar/book", { method: "POST", body: JSON.stringify(data) }),
+  getCalendlyBookingLink: () => request("/calendly/booking-link"),
 
   // Analytics
   getDashboard: () => request("/analytics/dashboard"),
