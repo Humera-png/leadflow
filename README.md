@@ -25,12 +25,31 @@ Open http://localhost:5173.
 - **Automation**: new cold lead → email #1 auto-scheduled for next morning → auto follow-ups every 5 days (3-email sequence) → status auto-advances on reply/call-booked/deal-closed. Runs on a 60s interval tick in `server/src/index.js`.
 - **CSV import/export**: `POST /api/leads/import-csv`, `GET /api/leads/export-csv` — same column set, round-trips cleanly.
 - **Analytics**: status breakdown (all 6 statuses), Cold→Warm→Hot→Customer conversion funnel, conversion rate by month, best-performing email templates, CSV export.
+- **Inbound lead capture**: a public, no-login form at `/capture` — embed it on an external landing page/website via `<iframe>` and every submission becomes a new Cold lead (`source: "webform"`) that flows straight into the normal auto-sequence. See "Embedding the capture form" below.
 
 ## Current state
 
 - **Backend** (`server/`): data lives **in-memory** (resets on restart/redeploy) — swap `server/src/data/store.js` for Mongoose + MongoDB Atlas when ready; document shapes already match a real schema.
 - **Gmail / Google Calendar**: currently **mocked** — emails/events are logged to the server console and recorded in the data store, nothing is actually sent. Wire real sending in `server/src/services/emailService.js` and `server/src/services/calendarService.js` (marked with `TODO` comments), then set `GOOGLE_CLIENT_ID` / `GOOGLE_REFRESH_TOKEN` in `server/.env` (copy from `server/.env.example`).
 - **Calendly**: not connected — `Meetings` are created directly via the in-app "Book a call" action instead of a webhook.
+
+## Embedding the capture form
+
+Drop this on any external site (your marketing site, a landing page builder, etc.) to actually generate new leads instead of only managing ones you already have:
+
+```html
+<iframe
+  src="https://leadflowtool.vercel.app/capture"
+  style="width: 100%; max-width: 420px; height: 480px; border: 0;"
+  title="Get in touch"
+></iframe>
+```
+
+Notes:
+- The form posts to `POST /api/leads/capture` on the backend directly (not through the frontend's normal `/api` proxy), with its own permissive CORS so it works embedded on any domain.
+- Basic abuse protection: a hidden honeypot field (bots tend to fill every field they find; real visitors never see it) and a 10-submissions-per-hour-per-IP rate limit (`server/src/routes/leads.js`).
+- Every submission lands as a new **Cold** lead with `source: "webform"` (visible on Lead Detail) and goes through the same auto-sequence as any other fresh lead.
+- Not a scraper/prospecting tool — it captures people who come to you (inbound). For outbound prospecting (searching for companies/contacts matching your ICP), the legitimate path is a paid B2B data API (e.g. Apollo, Hunter, Clearbit) rather than scraping — ask if you want that wired in next.
 
 ## Project structure
 

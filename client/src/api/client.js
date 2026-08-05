@@ -34,6 +34,7 @@ export const api = {
     return request("/leads/import-csv", { method: "POST", body: form });
   },
   exportLeadsCsvUrl: () => `${BASE}/leads/export-csv`,
+  submitCapture: (data) => request("/leads/capture", { method: "POST", body: JSON.stringify(data) }),
 
   // Sequences
   getSequence: (leadId) => request(`/sequences/${leadId}`),

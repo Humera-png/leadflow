@@ -72,6 +72,7 @@ function baseLeadFields(dateAdded) {
     dealValue: 0,
     nextAction: "",
     lastUpdated: dateAdded,
+    source: "manual",
   };
 }
 

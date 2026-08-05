@@ -6,11 +6,15 @@ import LeadDetail from "./pages/LeadDetail.jsx";
 import Templates from "./pages/Templates.jsx";
 import Calendar from "./pages/Calendar.jsx";
 import Analytics from "./pages/Analytics.jsx";
+import CapturePage from "./pages/CapturePage.jsx";
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Public, no sidebar — embeddable via iframe on an external site. */}
+        <Route path="capture" element={<CapturePage />} />
+
         <Route element={<Layout />}>
           <Route index element={<Dashboard />} />
           <Route path="leads" element={<Leads />} />

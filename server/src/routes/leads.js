@@ -1,4 +1,5 @@
 import { Router } from "express";
+import cors from "cors";
 import multer from "multer";
 import Papa from "papaparse";
 import { leads, sequences, conversations } from "../data/store.js";
@@ -29,7 +30,22 @@ function newLeadDefaults() {
     dealValue: 0,
     nextAction: "",
     lastUpdated: new Date().toISOString(),
+    source: "manual", // manual | import | webform — where this lead came from
   };
+}
+
+// Tiny in-memory sliding-window limiter for the public capture endpoint (no auth,
+// reachable from anywhere it's embedded, so it needs some abuse protection).
+const CAPTURE_WINDOW_MS = 60 * 60 * 1000;
+const CAPTURE_MAX_PER_WINDOW = 10;
+const captureHits = new Map(); // ip -> timestamps[]
+
+function isRateLimited(ip) {
+  const now = Date.now();
+  const hits = (captureHits.get(ip) ?? []).filter((t) => now - t < CAPTURE_WINDOW_MS);
+  hits.push(now);
+  captureHits.set(ip, hits);
+  return hits.length > CAPTURE_MAX_PER_WINDOW;
 }
 
 function parseDateOrNull(value) {
@@ -114,6 +130,7 @@ router.get("/export-csv", (req, res) => {
     Notes: l.notes ?? "",
     "Next Action": l.nextAction ?? "",
     "Last Updated": l.lastUpdated ?? "",
+    Source: l.source ?? "manual",
   }));
 
   const csv = Papa.unparse(rows);
@@ -183,6 +200,7 @@ router.post("/import-csv", upload.single("file"), (req, res) => {
       dealValue: parseNumber(row["Deal Value (₹)"], 0),
       nextAction: row["Next Action"] ?? "",
       lastUpdated: parseDateOrNull(row["Last Updated"]) ?? new Date().toISOString(),
+      source: "import",
     });
 
     hydrateFromImport(lead);
@@ -190,6 +208,47 @@ router.post("/import-csv", upload.single("file"), (req, res) => {
   }
 
   res.status(201).json({ imported, skipped, total: parsed.data.length });
+});
+
+// Public inbound lead-capture form endpoint — meant to be embedded on an external site
+// (see client CapturePage.jsx), so it gets its own permissive CORS and light rate
+// limiting rather than sharing the app-wide CLIENT_ORIGIN restriction in index.js.
+router.options("/capture", cors());
+router.post("/capture", cors(), (req, res) => {
+  const ip = req.ip;
+  if (isRateLimited(ip)) {
+    return res.status(429).json({ error: "Too many submissions, try again later" });
+  }
+
+  const { name, email, company, phone, message, website } = req.body;
+
+  // Honeypot: real visitors never see or fill this hidden field, bots often do.
+  // Pretend success so bots don't learn to avoid the field.
+  if (website) {
+    return res.status(201).json({ ok: true });
+  }
+
+  if (!name || !email) {
+    return res.status(400).json({ error: "name and email are required" });
+  }
+
+  const now = new Date().toISOString();
+  const lead = leads.insert({
+    name,
+    company: company ?? "",
+    email,
+    phone: phone ?? "",
+    linkedinUrl: "",
+    icp: false,
+    status: "cold",
+    dateAdded: now,
+    notes: message ?? "",
+    ...newLeadDefaults(),
+    source: "webform",
+  });
+
+  onLeadCreated(lead); // fresh inbound lead -> normal auto-sequence applies
+  res.status(201).json({ ok: true });
 });
 
 router.get("/:id", (req, res) => {

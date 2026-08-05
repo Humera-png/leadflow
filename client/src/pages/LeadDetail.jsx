@@ -6,6 +6,7 @@ import LeadModal from "../components/LeadModal.jsx";
 import MarkAsRepliedModal from "../components/MarkAsRepliedModal.jsx";
 
 const DEAL_STATUSES = ["Pending", "Won", "Lost"];
+const SOURCE_LABELS = { manual: "Added manually", import: "CSV import", webform: "Web form" };
 
 function fmtDateTime(value) {
   return value ? new Date(value).toLocaleString() : "—";
@@ -137,6 +138,7 @@ export default function LeadDetail() {
           />
           <Info label="Added" value={new Date(lead.dateAdded).toLocaleDateString()} />
           <Info label="Last Updated" value={fmtDateTime(lead.lastUpdated)} />
+          <Info label="Source" value={SOURCE_LABELS[lead.source] ?? "Added manually"} />
         </dl>
         {lead.notes && <p className="mt-3 rounded-md bg-slate-50 p-3 text-sm text-slate-600">{lead.notes}</p>}
 
