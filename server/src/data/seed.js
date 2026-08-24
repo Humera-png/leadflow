@@ -1,8 +1,9 @@
 import { emailTemplates } from "./store.js";
 
-// Your real email sequence templates — kept so the automation engine has something
-// to send. No sample/demo leads are seeded; import your own CSV via the Leads page.
-const TEMPLATES = [
+// Default email sequence templates given to every new account on signup — each
+// account's copy is independent from there (edit/delete freely, e.g. Freelance vs
+// NaviaLabs can diverge completely).
+const DEFAULT_TEMPLATES = [
   {
     name: "First Cold Email",
     subject: "Quick question on {{company}}",
@@ -42,6 +43,6 @@ But if you'd like to explore how to save your team 15+ hours/week, I'm here.
   },
 ];
 
-export function seed() {
-  for (const t of TEMPLATES) emailTemplates.insert(t);
+export function seedTemplatesForUser(ownerId) {
+  for (const t of DEFAULT_TEMPLATES) emailTemplates.insert({ ...t, ownerId });
 }

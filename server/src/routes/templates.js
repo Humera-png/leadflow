@@ -1,15 +1,17 @@
 import { Router } from "express";
 import { emailTemplates } from "../data/store.js";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
+router.use(requireAuth);
 
 router.get("/", (req, res) => {
-  res.json(emailTemplates.all());
+  res.json(emailTemplates.find((t) => t.ownerId === req.userId));
 });
 
 router.get("/:id", (req, res) => {
   const template = emailTemplates.get(req.params.id);
-  if (!template) return res.status(404).json({ error: "Template not found" });
+  if (!template || template.ownerId !== req.userId) return res.status(404).json({ error: "Template not found" });
   res.json(template);
 });
 
@@ -20,6 +22,7 @@ router.post("/", (req, res) => {
   }
   const variables = [...`${subject} ${body}`.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]);
   const template = emailTemplates.insert({
+    ownerId: req.userId,
     name,
     subject,
     body,
@@ -30,9 +33,9 @@ router.post("/", (req, res) => {
 
 router.put("/:id", (req, res) => {
   const existing = emailTemplates.get(req.params.id);
-  if (!existing) return res.status(404).json({ error: "Template not found" });
+  if (!existing || existing.ownerId !== req.userId) return res.status(404).json({ error: "Template not found" });
 
-  const { _id, ...patch } = req.body;
+  const { _id, ownerId, ...patch } = req.body;
   if (patch.subject || patch.body) {
     const subject = patch.subject ?? existing.subject;
     const body = patch.body ?? existing.body;
@@ -46,7 +49,7 @@ router.put("/:id", (req, res) => {
 
 router.delete("/:id", (req, res) => {
   const existing = emailTemplates.get(req.params.id);
-  if (!existing) return res.status(404).json({ error: "Template not found" });
+  if (!existing || existing.ownerId !== req.userId) return res.status(404).json({ error: "Template not found" });
   emailTemplates.remove(req.params.id);
   res.status(204).end();
 });

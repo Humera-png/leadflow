@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { conversations, leads } from "../data/store.js";
 import { sendEmail } from "../services/emailService.js";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -10,16 +11,16 @@ const TRACKING_PIXEL = Buffer.from(
   "base64"
 );
 
-router.post("/send", async (req, res) => {
+router.post("/send", requireAuth, async (req, res) => {
   const { leadId, subject, body } = req.body;
   const lead = leads.get(leadId);
-  if (!lead) return res.status(404).json({ error: "Lead not found" });
+  if (!lead || lead.ownerId !== req.userId) return res.status(404).json({ error: "Lead not found" });
 
   const result = await sendEmail({ to: lead.email, subject, body, leadId });
 
   const convo =
     conversations.findOne((c) => c.leadId === leadId) ??
-    conversations.insert({ leadId, messages: [], callNotes: [], dealValue: null, dealStatus: "open" });
+    conversations.insert({ ownerId: req.userId, leadId, messages: [], callNotes: [], dealValue: null, dealStatus: "open" });
 
   convo.messages.push({
     date: result.sentAt,
@@ -33,11 +34,16 @@ router.post("/send", async (req, res) => {
   res.status(201).json(result);
 });
 
-router.get("/:leadId", (req, res) => {
+router.get("/:leadId", requireAuth, (req, res) => {
+  const lead = leads.get(req.params.leadId);
+  if (!lead || lead.ownerId !== req.userId) return res.status(404).json({ error: "Lead not found" });
+
   const convo = conversations.findOne((c) => c.leadId === req.params.leadId);
   res.json(convo?.messages.filter((m) => m.type === "email" || m.type === "reply") ?? []);
 });
 
+// Deliberately unauthenticated — this URL is embedded as an <img> tag inside outgoing
+// emails and hit by the recipient's mail client, which has no LeadFlow credentials.
 router.get("/:leadId/open", (req, res) => {
   const convo = conversations.findOne((c) => c.leadId === req.params.leadId);
   if (convo) {

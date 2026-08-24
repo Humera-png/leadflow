@@ -9,8 +9,8 @@ import templatesRouter from "./routes/templates.js";
 import conversationsRouter from "./routes/conversations.js";
 import authRouter from "./routes/auth.js";
 import calendlyRouter from "./routes/calendly.js";
-import { seed } from "./data/seed.js";
-import { hydrateFromMongo, emailTemplates } from "./data/store.js";
+import accountRouter from "./routes/account.js";
+import { hydrateFromMongo } from "./data/store.js";
 import { processDueActions } from "./services/automation.js";
 import { isGmailConfigured } from "./services/emailService.js";
 import { isCalendarConfigured } from "./services/calendarService.js";
@@ -35,6 +35,7 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+app.use("/api/account", accountRouter);
 app.use("/api/leads", leadsRouter);
 app.use("/api/sequences", sequencesRouter);
 app.use("/api/emails", emailsRouter);
@@ -53,17 +54,14 @@ app.use((err, req, res, next) => {
 const AUTOMATION_INTERVAL_MS = 60 * 1000;
 
 async function start() {
+  if (!process.env.JWT_SECRET) {
+    console.error("JWT_SECRET is not set — signup/login will fail. Set it and restart.");
+  }
+
   const mongoHydrated = await hydrateFromMongo().catch((err) => {
     console.error("[mongo] connection failed, falling back to in-memory only:", err.message);
     return false;
   });
-
-  // Only seed demo templates into a genuinely empty database (fresh in-memory
-  // run, or a brand-new Mongo database with nothing in it yet) — never on top
-  // of real data already loaded from Mongo.
-  if (!mongoHydrated || emailTemplates.all().length === 0) {
-    seed();
-  }
 
   setInterval(() => {
     processDueActions().catch((err) => console.error("automation tick failed", err));

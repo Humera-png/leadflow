@@ -90,8 +90,9 @@ export const sequences = new Collection("sequences");
 export const conversations = new Collection("conversations");
 export const emailTemplates = new Collection("emailTemplates");
 export const meetings = new Collection("meetings");
+export const users = new Collection("users");
 
-const ALL_COLLECTIONS = [leads, sequences, conversations, emailTemplates, meetings];
+const ALL_COLLECTIONS = [leads, sequences, conversations, emailTemplates, meetings, users];
 
 /**
  * Connects to Mongo (if configured), attaches each collection to its Mongo

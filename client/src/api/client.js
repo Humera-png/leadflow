@@ -3,12 +3,30 @@
 // origin and requests go straight there instead of relying on a dev-only proxy.
 const API_ORIGIN = import.meta.env.VITE_API_URL ?? "";
 const BASE = `${API_ORIGIN}/api`;
+const TOKEN_KEY = "leadflow_token";
+
+export function getToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
+export function setToken(token) {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+export function clearToken() {
+  localStorage.removeItem(TOKEN_KEY);
+}
 
 async function request(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: options.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
-    ...options,
-  });
+  const token = getToken();
+  const headers = options.body instanceof FormData ? {} : { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE}${path}`, { ...options, headers: { ...headers, ...options.headers } });
+
+  if (res.status === 401 && path !== "/account/login") {
+    clearToken();
+    window.dispatchEvent(new Event("leadflow:unauthorized"));
+  }
+
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || `Request failed: ${res.status}`);
@@ -18,6 +36,13 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  // Account
+  signup: (data) => request("/account/signup", { method: "POST", body: JSON.stringify(data) }),
+  login: (data) => request("/account/login", { method: "POST", body: JSON.stringify(data) }),
+  getMe: () => request("/account/me"),
+  regenerateApiKey: () => request("/account/api-key/regenerate", { method: "POST" }),
+  regenerateCaptureToken: () => request("/account/capture-token/regenerate", { method: "POST" }),
+
   // Leads
   getLeads: (params = {}) => {
     const qs = new URLSearchParams(params).toString();
@@ -34,7 +59,8 @@ export const api = {
     return request("/leads/import-csv", { method: "POST", body: form });
   },
   exportLeadsCsvUrl: () => `${BASE}/leads/export-csv`,
-  submitCapture: (data) => request("/leads/capture", { method: "POST", body: JSON.stringify(data) }),
+  submitCapture: (data, captureToken) =>
+    request(`/leads/capture?key=${encodeURIComponent(captureToken)}`, { method: "POST", body: JSON.stringify(data) }),
 
   // Sequences
   getSequence: (leadId) => request(`/sequences/${leadId}`),

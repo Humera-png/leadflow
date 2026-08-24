@@ -2,11 +2,24 @@ import { Router } from "express";
 import cors from "cors";
 import multer from "multer";
 import Papa from "papaparse";
-import { leads, sequences, conversations } from "../data/store.js";
+import ExcelJS from "exceljs";
+import { leads, sequences, conversations, users } from "../data/store.js";
 import { onLeadCreated, hydrateFromImport } from "../services/automation.js";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+const IMPORT_EXTENSIONS = [".csv", ".xlsx", ".xls"];
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ext = file.originalname.toLowerCase().slice(file.originalname.lastIndexOf("."));
+    if (!IMPORT_EXTENSIONS.includes(ext)) {
+      return cb(new Error(`Unsupported file type "${ext}". Use one of: ${IMPORT_EXTENSIONS.join(", ")}`));
+    }
+    cb(null, true);
+  },
+});
 
 // "followup" = they said "not now, maybe later" — distinct from "rejected" (hard no).
 const VALID_STATUSES = ["cold", "warm", "hot", "followup", "rejected", "customer"];
@@ -75,10 +88,10 @@ function normalizeStatus(raw) {
   return STATUS_ALIASES[key] ?? "cold";
 }
 
-router.get("/", (req, res) => {
+router.get("/", requireAuth, (req, res) => {
   const { status, icp, company, search } = req.query;
 
-  let results = leads.all();
+  let results = leads.find((l) => l.ownerId === req.userId);
   if (status) results = results.filter((l) => l.status === status);
   if (icp) results = results.filter((l) => String(l.icp) === String(icp === "true"));
   if (company) {
@@ -104,8 +117,8 @@ router.get("/", (req, res) => {
 });
 
 // CSV export/import must be declared before "/:id" so they aren't swallowed by that route.
-router.get("/export-csv", (req, res) => {
-  const rows = leads.all().map((l) => ({
+router.get("/export-csv", requireAuth, (req, res) => {
+  const rows = leads.find((l) => l.ownerId === req.userId).map((l) => ({
     Name: l.name,
     Company: l.company,
     Email: l.email,
@@ -142,24 +155,62 @@ router.get("/export-csv", (req, res) => {
   res.send(csv);
 });
 
-router.post("/import-csv", upload.single("file"), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: "No CSV file uploaded (field name: file)" });
+// Flattens whatever a spreadsheet cell might contain (plain value, Date object,
+// ExcelJS rich-text object, formula result) down to a plain string for the field
+// parsers below, which all expect string-ish input the same way CSV rows give them.
+function cellToString(value) {
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "object") {
+    if ("text" in value) return String(value.text);
+    if (Array.isArray(value.richText)) return value.richText.map((r) => r.text).join("");
+    if ("result" in value) return String(value.result); // formula cell
+  }
+  return String(value);
+}
 
-  const parsed = Papa.parse(req.file.buffer.toString("utf-8"), {
-    header: true,
-    skipEmptyLines: true,
+async function rowsFromExcel(buffer) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const sheet = workbook.worksheets[0];
+  if (!sheet) return [];
+
+  const headers = [];
+  sheet.getRow(1).eachCell((cell, colNumber) => {
+    headers[colNumber] = cellToString(cell.value).trim();
   });
 
-  if (parsed.errors?.length) {
-    return res.status(400).json({ error: "Failed to parse CSV", details: parsed.errors.slice(0, 5) });
-  }
+  const rows = [];
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return; // header row
+    const obj = {};
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      const header = headers[colNumber];
+      if (header) obj[header] = cellToString(cell.value);
+    });
+    rows.push(obj);
+  });
+  return rows;
+}
 
+function rowsFromCsv(text) {
+  const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+  if (parsed.errors?.length) {
+    const err = new Error("Failed to parse CSV");
+    err.details = parsed.errors.slice(0, 5);
+    throw err;
+  }
+  return parsed.data;
+}
+
+/** Same column mapping as the CSV template (see export-csv above), reused for every import format. */
+function insertLeadsFromRows(rows, ownerId) {
   let imported = 0;
   let skipped = 0;
 
-  for (const row of parsed.data) {
-    const name = row.Name?.trim();
-    const email = row.Email?.trim();
+  for (const row of rows) {
+    const name = String(row.Name ?? "").trim();
+    const email = String(row.Email ?? "").trim();
     if (!name || !email) {
       skipped++;
       continue;
@@ -171,6 +222,7 @@ router.post("/import-csv", upload.single("file"), (req, res) => {
       : "Pending";
 
     const lead = leads.insert({
+      ownerId,
       name,
       company: row.Company ?? "",
       email,
@@ -207,17 +259,44 @@ router.post("/import-csv", upload.single("file"), (req, res) => {
     imported++;
   }
 
-  res.status(201).json({ imported, skipped, total: parsed.data.length });
+  return { imported, skipped, total: rows.length };
+}
+
+// Accepts .csv, .xlsx, or .xls — same column mapping either way (see export-csv above
+// for the exact header names). Route name kept as "import-csv" for backward
+// compatibility with the existing frontend, even though it now accepts more formats.
+router.post("/import-csv", requireAuth, upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: `No file uploaded (field name: file). Accepted: ${IMPORT_EXTENSIONS.join(", ")}` });
+  }
+
+  const ext = req.file.originalname.toLowerCase().slice(req.file.originalname.lastIndexOf("."));
+
+  try {
+    const rows =
+      ext === ".csv" ? rowsFromCsv(req.file.buffer.toString("utf-8")) : await rowsFromExcel(req.file.buffer);
+    res.status(201).json(insertLeadsFromRows(rows, req.userId));
+  } catch (err) {
+    res.status(400).json({ error: err.message, details: err.details });
+  }
 });
 
 // Public inbound lead-capture form endpoint — meant to be embedded on an external site
 // (see client CapturePage.jsx), so it gets its own permissive CORS and light rate
 // limiting rather than sharing the app-wide CLIENT_ORIGIN restriction in index.js.
+// Resolves which account a lead belongs to via a low-privilege "capture token" in the
+// URL (?key=...) — safe to expose in a public embed, unlike the full API key.
 router.options("/capture", cors());
 router.post("/capture", cors(), (req, res) => {
   const ip = req.ip;
   if (isRateLimited(ip)) {
     return res.status(429).json({ error: "Too many submissions, try again later" });
+  }
+
+  const captureToken = req.query.key || req.body.key;
+  const owner = users.findOne((u) => u.captureToken === captureToken);
+  if (!owner) {
+    return res.status(400).json({ error: "Invalid or missing capture key" });
   }
 
   const { name, email, company, phone, message, website } = req.body;
@@ -234,6 +313,7 @@ router.post("/capture", cors(), (req, res) => {
 
   const now = new Date().toISOString();
   const lead = leads.insert({
+    ownerId: owner._id,
     name,
     company: company ?? "",
     email,
@@ -251,15 +331,15 @@ router.post("/capture", cors(), (req, res) => {
   res.status(201).json({ ok: true });
 });
 
-router.get("/:id", (req, res) => {
+router.get("/:id", requireAuth, (req, res) => {
   const lead = leads.get(req.params.id);
-  if (!lead) return res.status(404).json({ error: "Lead not found" });
+  if (!lead || lead.ownerId !== req.userId) return res.status(404).json({ error: "Lead not found" });
   res.json(lead);
 });
 
 // Powers both the plain "Add Lead" flow and the richer Quick Add modal (which can
 // pre-fill status/reply/deal info for a lead that already has some history).
-router.post("/", (req, res) => {
+router.post("/", requireAuth, (req, res) => {
   const {
     name,
     company,
@@ -284,6 +364,7 @@ router.post("/", (req, res) => {
   const now = new Date().toISOString();
 
   const lead = leads.insert({
+    ownerId: req.userId,
     name,
     company: company ?? "",
     email,
@@ -316,18 +397,18 @@ router.post("/", (req, res) => {
   res.status(201).json(lead);
 });
 
-router.put("/:id", (req, res) => {
+router.put("/:id", requireAuth, (req, res) => {
   const existing = leads.get(req.params.id);
-  if (!existing) return res.status(404).json({ error: "Lead not found" });
+  if (!existing || existing.ownerId !== req.userId) return res.status(404).json({ error: "Lead not found" });
 
-  const { _id, dateAdded, ...patch } = req.body;
+  const { _id, dateAdded, ownerId, ...patch } = req.body;
   const updated = leads.update(req.params.id, { ...patch, lastUpdated: new Date().toISOString() });
   res.json(updated);
 });
 
-router.delete("/:id", (req, res) => {
+router.delete("/:id", requireAuth, (req, res) => {
   const existing = leads.get(req.params.id);
-  if (!existing) return res.status(404).json({ error: "Lead not found" });
+  if (!existing || existing.ownerId !== req.userId) return res.status(404).json({ error: "Lead not found" });
 
   leads.remove(req.params.id);
   const sequence = sequences.findOne((s) => s.leadId === req.params.id);
@@ -339,18 +420,20 @@ router.delete("/:id", (req, res) => {
 });
 
 /** Bulk actions: change status or add a note-tag across multiple leads at once. */
-router.patch("/bulk", (req, res) => {
+router.patch("/bulk", requireAuth, (req, res) => {
   const { ids, status, tag } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ error: "ids array is required" });
   }
 
   const updated = ids.map((id) => {
+    const lead = leads.get(id);
+    if (!lead || lead.ownerId !== req.userId) return null;
+
     const patch = { lastUpdated: new Date().toISOString() };
     if (status) patch.status = status;
     if (tag) {
-      const lead = leads.get(id);
-      patch.notes = lead ? `${lead.notes ? lead.notes + " " : ""}#${tag}` : `#${tag}`;
+      patch.notes = lead.notes ? `${lead.notes} #${tag}` : `#${tag}`;
     }
     return leads.update(id, patch);
   });

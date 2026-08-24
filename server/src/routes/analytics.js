@@ -1,25 +1,28 @@
 import { Router } from "express";
 import { leads, sequences, meetings, conversations, emailTemplates } from "../data/store.js";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
+router.use(requireAuth);
 
-function countByStatus() {
+function countByStatus(ownerId) {
   const counts = { cold: 0, warm: 0, hot: 0, followup: 0, rejected: 0, customer: 0 };
-  for (const lead of leads.all()) {
+  for (const lead of leads.find((l) => l.ownerId === ownerId)) {
     if (counts[lead.status] !== undefined) counts[lead.status]++;
   }
   return counts;
 }
 
 router.get("/dashboard", (req, res) => {
-  const total = leads.all().length;
-  const counts = countByStatus();
-  const callsBooked = meetings.all().length;
-  const dealsClosed = sequences.find((s) => s.dealClosed?.amount).length;
-  const repliedLeads = sequences.find(
-    (s) => s.email1Sent?.response || s.email2Sent?.response || s.email3Sent?.response
-  ).length;
-  const contactedLeads = sequences.find((s) => s.email1Sent?.date).length;
+  const myLeads = leads.find((l) => l.ownerId === req.userId);
+  const total = myLeads.length;
+  const counts = countByStatus(req.userId);
+  const callsBooked = meetings.find((m) => m.ownerId === req.userId).length;
+  const dealsClosed = sequences.find((s) => s.ownerId === req.userId && s.dealClosed?.amount).length;
+  // Reply tracking lives on the flat Lead record (lastReplyDate), not the Sequence —
+  // the Sequence's email*Sent.response field is legacy and never actually populated.
+  const repliedLeads = myLeads.filter((l) => l.lastReplyDate).length;
+  const contactedLeads = myLeads.filter((l) => l.emailOneSentDate).length;
 
   res.json({
     totalLeads: total,
@@ -39,7 +42,7 @@ router.get("/dashboard", (req, res) => {
 });
 
 router.get("/funnel", (req, res) => {
-  const counts = countByStatus();
+  const counts = countByStatus(req.userId);
   res.json([
     { stage: "Cold", count: counts.cold },
     { stage: "Warm", count: counts.warm },
@@ -51,7 +54,7 @@ router.get("/funnel", (req, res) => {
 // Full 6-status breakdown for the Analytics page (separate from the 4-stage funnel,
 // which intentionally only tracks the Cold -> Warm -> Hot -> Customer conversion path).
 router.get("/status-breakdown", (req, res) => {
-  const counts = countByStatus();
+  const counts = countByStatus(req.userId);
   res.json([
     { status: "cold", label: "Cold", count: counts.cold },
     { status: "warm", label: "Warm", count: counts.warm },
@@ -65,7 +68,7 @@ router.get("/status-breakdown", (req, res) => {
 router.get("/conversion", (req, res) => {
   const byMonth = new Map();
 
-  for (const lead of leads.all()) {
+  for (const lead of leads.find((l) => l.ownerId === req.userId)) {
     const key = lead.dateAdded.slice(0, 7); // YYYY-MM
     if (!byMonth.has(key)) byMonth.set(key, { total: 0, customers: 0 });
     byMonth.get(key).total++;
@@ -87,7 +90,7 @@ router.get("/conversion", (req, res) => {
 router.get("/templates", (req, res) => {
   const stats = new Map(); // templateId -> { sent: Set<leadId>, progressed: Set<leadId> }
 
-  for (const convo of conversations.all()) {
+  for (const convo of conversations.find((c) => c.ownerId === req.userId)) {
     for (const msg of convo.messages) {
       if (msg.type !== "email" || !msg.templateId) continue;
       if (!stats.has(msg.templateId)) stats.set(msg.templateId, { sent: new Set(), progressed: new Set() });

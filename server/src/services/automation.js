@@ -24,6 +24,7 @@ function getOrCreateConversation(leadId) {
   let convo = conversations.findOne((c) => c.leadId === leadId);
   if (!convo) {
     convo = conversations.insert({
+      ownerId: leads.get(leadId)?.ownerId ?? null,
       leadId,
       messages: [],
       callNotes: [],
@@ -44,6 +45,7 @@ function appendMessage(leadId, { from, to, content, type, templateId = null }) {
 /** Step 1: lead added -> cold, sequence created, email #1 scheduled for tomorrow morning. */
 export function onLeadCreated(lead) {
   const sequence = sequences.insert({
+    ownerId: lead.ownerId,
     leadId: lead._id,
     email1Sent: { date: null, response: null },
     email2Sent: { date: null, response: null },
@@ -192,6 +194,7 @@ export function onDealClosed(leadId, amount) {
  */
 export function hydrateFromImport(lead) {
   sequences.insert({
+    ownerId: lead.ownerId,
     leadId: lead._id,
     email1Sent: { date: lead.emailOneSentDate || null, response: null },
     email2Sent: { date: lead.emailTwoSentDate || null, response: null },

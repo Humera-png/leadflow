@@ -1,11 +1,15 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../api/client.js";
 
 // Public, unauthenticated page — no Layout/sidebar (see App.jsx route). Meant to be
-// embedded on an external site via <iframe src=".../capture">. Every submission
-// becomes a new Cold lead with source: "webform" and goes straight into the normal
-// auto-sequence, same as any other fresh cold lead.
+// embedded on an external site via <iframe src=".../capture?key=cap_..."> — the "key"
+// is the account's low-privilege capture token (from Settings), which tells the
+// backend which account a submission belongs to. Every submission becomes a new
+// Cold lead with source: "webform" and goes straight into the normal auto-sequence.
 export default function CapturePage() {
+  const [searchParams] = useSearchParams();
+  const captureToken = searchParams.get("key");
   const [form, setForm] = useState({ name: "", email: "", company: "", phone: "", message: "", website: "" });
   const [status, setStatus] = useState("idle"); // idle | submitting | done | error
   const [error, setError] = useState("");
@@ -18,10 +22,14 @@ export default function CapturePage() {
       setError("Name and email are required.");
       return;
     }
+    if (!captureToken) {
+      setError("This form is missing its account key — check the embed URL includes ?key=...");
+      return;
+    }
     setStatus("submitting");
     setError("");
     try {
-      await api.submitCapture(form);
+      await api.submitCapture(form, captureToken);
       setStatus("done");
     } catch (err) {
       setError(err.message);

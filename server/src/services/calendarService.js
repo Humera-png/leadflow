@@ -7,11 +7,11 @@ const WORKDAY_START_HOUR = 9;
 const WORKDAY_END_HOUR = 17;
 const SLOT_MINUTES = 30;
 
-/** Mock free/busy: every 30-min slot on the next 5 weekdays, minus booked meetings. */
-export function getAvailability() {
+/** Mock free/busy: every 30-min slot on the next 5 weekdays, minus this account's booked meetings. */
+export function getAvailability(ownerId) {
   const booked = new Set(
     meetings
-      .find((m) => m.status !== "cancelled")
+      .find((m) => m.ownerId === ownerId && m.status !== "cancelled")
       .map((m) => new Date(m.scheduledTime).toISOString())
   );
 
@@ -46,11 +46,11 @@ export function getAvailability() {
  */
 export async function createEvent({ leadId, scheduledTime, duration = 30 }) {
   const configured = isGoogleConfigured();
+  const lead = leads.get(leadId);
   let calendarEventId = newId();
   let recordingLink = null;
 
   if (configured) {
-    const lead = leads.get(leadId);
     const calendar = google.calendar({ version: "v3", auth: getAuthorizedClient() });
     const endTime = new Date(new Date(scheduledTime).getTime() + duration * 60 * 1000).toISOString();
 
@@ -77,6 +77,7 @@ export async function createEvent({ leadId, scheduledTime, duration = 30 }) {
   }
 
   return meetings.insert({
+    ownerId: lead?.ownerId ?? null,
     leadId,
     calendlyEventId: null,
     calendarEventId,
