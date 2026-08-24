@@ -1,4 +1,4 @@
-import { leads, sequences, conversations, emailTemplates } from "../data/store.js";
+import { leads, sequences, conversations, emailTemplates, meetings } from "../data/store.js";
 import { sendEmail, renderTemplate } from "./emailService.js";
 import { createEvent } from "./calendarService.js";
 
@@ -111,10 +111,16 @@ export async function processDueActions(now = new Date()) {
   return results;
 }
 
-/** Step: reply received -> lead goes warm, conversation logged, auto-sequence paused. */
+/**
+ * Step: reply received -> lead goes warm, conversation logged, auto-sequence paused.
+ * Idempotent against the exact same reply text being submitted again — protects
+ * against an external automation (e.g. polling every 15 min without its own dedup)
+ * re-detecting the same reply and re-firing this over and over.
+ */
 export function onReplyReceived(leadId, content) {
   const lead = leads.get(leadId);
   if (!lead) return null;
+  if (lead.replyMessage === content) return { suggestion: "Schedule a call?", alreadyProcessed: true };
 
   const now = new Date().toISOString();
   touchLead(leadId, { status: "warm", lastReplyDate: now, replyMessage: content });
@@ -128,10 +134,21 @@ export function onReplyReceived(leadId, content) {
   return { suggestion: "Schedule a call?" };
 }
 
-/** Step: call booked -> Calendar event created, lead goes hot. */
+/**
+ * Step: call booked -> Calendar event created, lead goes hot.
+ * Idempotent against the exact same booking being submitted again — without this,
+ * a redundant call (e.g. an external automation re-detecting "callBooked: true" on
+ * every poll) would create a duplicate real Google Calendar event + duplicate real
+ * invite email to the lead each time.
+ */
 export async function onCallBooked(leadId, { scheduledTime, duration = 30 }) {
   const lead = leads.get(leadId);
   if (!lead) return null;
+
+  if (lead.callBooked && lead.meetingDatetime === scheduledTime) {
+    const existing = meetings.findOne((m) => m.leadId === leadId && m.scheduledTime === scheduledTime);
+    if (existing) return { ...existing, alreadyProcessed: true };
+  }
 
   const meeting = await createEvent({ leadId, scheduledTime, duration });
   const now = new Date().toISOString();
@@ -160,10 +177,17 @@ export async function onCallBooked(leadId, { scheduledTime, duration = 30 }) {
   return meeting;
 }
 
-/** Step: deal closed -> lead becomes a customer. */
+/**
+ * Step: deal closed -> lead becomes a customer.
+ * Idempotent once a deal is already Won — protects against duplicate "deal closed"
+ * conversation entries/notifications from a redundant re-processing call.
+ */
 export function onDealClosed(leadId, amount) {
   const lead = leads.get(leadId);
   if (!lead) return null;
+  if (lead.dealStatus === "Won") {
+    return { ...sequences.findOne((s) => s.leadId === leadId), alreadyProcessed: true };
+  }
 
   const now = new Date().toISOString();
   touchLead(leadId, { status: "customer", dealStatus: "Won", dealValue: amount });
