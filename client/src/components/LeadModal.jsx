@@ -10,6 +10,7 @@ const DEAL_STATUSES = ["Pending", "Won", "Lost"];
 export default function LeadModal({ lead, onClose, onSave }) {
   const [form, setForm] = useState({
     name: lead.name,
+    business: lead.business ?? "",
     company: lead.company,
     email: lead.email,
     phone: lead.phone ?? "",
@@ -57,6 +58,13 @@ export default function LeadModal({ lead, onClose, onSave }) {
             <input className="input" value={form.company} onChange={update("company")} />
           </Field>
         </div>
+        <Field label="Business">
+          <input className="input" list="business-options-edit" value={form.business} onChange={update("business")} placeholder="e.g. Freelance, NaviaLabs" />
+          <datalist id="business-options-edit">
+            <option value="Freelance" />
+            <option value="NaviaLabs" />
+          </datalist>
+        </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Email *">
             <input className="input" type="email" value={form.email} onChange={update("email")} required />

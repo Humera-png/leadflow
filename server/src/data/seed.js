@@ -1,8 +1,8 @@
 import { emailTemplates } from "./store.js";
 
-// Default email sequence templates given to every new account on signup — each
-// account's copy is independent from there (edit/delete freely, e.g. Freelance vs
-// NaviaLabs can diverge completely).
+// Default email sequence templates given to every new account on signup — seeded
+// once per business tag, since one account can hold multiple businesses (e.g.
+// Freelance + NaviaLabs), each with its own independent copy from there on.
 const DEFAULT_TEMPLATES = [
   {
     name: "First Cold Email",
@@ -43,6 +43,10 @@ But if you'd like to explore how to save your team 15+ hours/week, I'm here.
   },
 ];
 
+const DEFAULT_BUSINESSES = ["Freelance", "NaviaLabs"];
+
 export function seedTemplatesForUser(ownerId) {
-  for (const t of DEFAULT_TEMPLATES) emailTemplates.insert({ ...t, ownerId });
+  for (const business of DEFAULT_BUSINESSES) {
+    for (const t of DEFAULT_TEMPLATES) emailTemplates.insert({ ...t, ownerId, business });
+  }
 }

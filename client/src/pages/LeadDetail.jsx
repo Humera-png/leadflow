@@ -123,7 +123,14 @@ export default function LeadDetail() {
               {lead.company} {lead.icp && <span className="ml-1 text-emerald-600">• ICP match</span>}
             </p>
           </div>
-          <StatusBadge status={lead.status} />
+          <div className="flex flex-col items-end gap-1.5">
+            {lead.business && (
+              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                {lead.business}
+              </span>
+            )}
+            <StatusBadge status={lead.status} />
+          </div>
         </div>
 
         <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">

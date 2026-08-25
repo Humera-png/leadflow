@@ -8,6 +8,8 @@ import ImportModal from "../components/ImportModal.jsx";
 // Order mirrors the "life of a lead" progression, not alphabetical.
 const STATUS_ORDER = ["cold", "warm", "hot", "followup", "rejected", "customer"];
 const STATUS_OPTIONS = ["", ...STATUS_ORDER];
+// Defaults seeded for every account — the filter also picks up any custom values in use.
+const DEFAULT_BUSINESSES = ["Freelance", "NaviaLabs"];
 
 function fmtDate(value) {
   return value ? new Date(value).toLocaleDateString() : "—";
@@ -18,6 +20,7 @@ export default function Leads() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
+  const [business, setBusiness] = useState("");
   const [search, setSearch] = useState("");
   const [icpOnly, setIcpOnly] = useState(false);
   const [selected, setSelected] = useState([]);
@@ -29,6 +32,7 @@ export default function Leads() {
     setLoading(true);
     const params = {};
     if (status) params.status = status;
+    if (business) params.business = business;
     if (search) params.search = search;
     if (icpOnly) params.icp = "true";
     api
@@ -42,7 +46,7 @@ export default function Leads() {
     const t = setTimeout(load, 200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, search, icpOnly]);
+  }, [status, business, search, icpOnly]);
 
   // Auto-dismiss the "lead added" toast after a few seconds.
   useEffect(() => {
@@ -72,6 +76,12 @@ export default function Leads() {
     load();
   };
 
+  const bulkSetBusiness = async (newBusiness) => {
+    await api.bulkUpdateLeads({ ids: selected, business: newBusiness });
+    setSelected([]);
+    load();
+  };
+
   const bulkTag = async () => {
     const tag = window.prompt("Tag to add to selected leads:");
     if (!tag) return;
@@ -79,6 +89,8 @@ export default function Leads() {
     setSelected([]);
     load();
   };
+
+  const businessOptions = [...new Set([...DEFAULT_BUSINESSES, ...leads.map((l) => l.business).filter(Boolean)])];
 
   return (
     <div className="space-y-4">
@@ -110,6 +122,14 @@ export default function Leads() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <select className="input w-auto" value={business} onChange={(e) => setBusiness(e.target.value)}>
+          <option value="">All businesses</option>
+          {businessOptions.map((b) => (
+            <option key={b} value={b}>
+              {b}
+            </option>
+          ))}
+        </select>
         <select className="input w-auto" value={status} onChange={(e) => setStatus(e.target.value)}>
           {STATUS_OPTIONS.map((s) => (
             <option key={s} value={s}>
@@ -125,6 +145,23 @@ export default function Leads() {
         {selected.length > 0 && (
           <div className="ml-auto flex items-center gap-2 text-sm">
             <span className="text-slate-500">{selected.length} selected</span>
+            <select
+              className="input w-auto"
+              defaultValue=""
+              onChange={(e) => {
+                if (e.target.value) bulkSetBusiness(e.target.value);
+                e.target.value = "";
+              }}
+            >
+              <option value="" disabled>
+                Set business...
+              </option>
+              {businessOptions.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
             <select
               className="input w-auto"
               defaultValue=""
@@ -163,6 +200,7 @@ export default function Leads() {
                 />
               </th>
               <th className="px-4 py-2.5 text-left font-medium text-slate-500">Name</th>
+              <th className="px-4 py-2.5 text-left font-medium text-slate-500">Business</th>
               <th className="px-4 py-2.5 text-left font-medium text-slate-500">Company</th>
               <th className="px-4 py-2.5 text-left font-medium text-slate-500">Email</th>
               <th className="px-4 py-2.5 text-left font-medium text-slate-500">Phone</th>
@@ -192,6 +230,7 @@ export default function Leads() {
                   </Link>
                   {lead.icp && <span className="ml-1 text-xs text-emerald-600" title="ICP match">●</span>}
                 </td>
+                <td className="px-4 py-2.5 text-slate-500">{lead.business || "—"}</td>
                 <td className="px-4 py-2.5 text-slate-700">{lead.company}</td>
                 <td className="px-4 py-2.5 text-slate-500">{lead.email}</td>
                 <td className="px-4 py-2.5 text-slate-500">{lead.phone || "—"}</td>
@@ -220,7 +259,7 @@ export default function Leads() {
             ))}
             {!loading && leads.length === 0 && (
               <tr>
-                <td colSpan={13} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={14} className="px-4 py-8 text-center text-slate-500">
                   No leads match your filters.
                 </td>
               </tr>

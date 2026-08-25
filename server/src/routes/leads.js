@@ -43,7 +43,8 @@ function newLeadDefaults() {
     dealValue: 0,
     nextAction: "",
     lastUpdated: new Date().toISOString(),
-    source: "manual", // manual | import | webform — where this lead came from
+    source: "manual", // manual | import | webform | calendly — where this lead came from
+    business: "", // free-text tag (e.g. "Freelance", "NaviaLabs") — one account, multiple businesses
   };
 }
 
@@ -89,10 +90,11 @@ function normalizeStatus(raw) {
 }
 
 router.get("/", requireAuth, (req, res) => {
-  const { status, icp, company, search } = req.query;
+  const { status, icp, company, search, business } = req.query;
 
   let results = leads.find((l) => l.ownerId === req.userId);
   if (status) results = results.filter((l) => l.status === status);
+  if (business) results = results.filter((l) => l.business === business);
   if (icp) results = results.filter((l) => String(l.icp) === String(icp === "true"));
   if (company) {
     results = results.filter((l) =>
@@ -120,6 +122,7 @@ router.get("/", requireAuth, (req, res) => {
 router.get("/export-csv", requireAuth, (req, res) => {
   const rows = leads.find((l) => l.ownerId === req.userId).map((l) => ({
     Name: l.name,
+    Business: l.business ?? "",
     Company: l.company,
     Email: l.email,
     Phone: l.phone,
@@ -224,6 +227,7 @@ function insertLeadsFromRows(rows, ownerId) {
     const lead = leads.insert({
       ownerId,
       name,
+      business: row.Business ?? "",
       company: row.Company ?? "",
       email,
       phone: row.Phone ?? "",
@@ -299,6 +303,10 @@ router.post("/capture", cors(), (req, res) => {
     return res.status(400).json({ error: "Invalid or missing capture key" });
   }
 
+  // Optional — lets you run separate embeds per business (e.g. ?key=...&business=Freelance)
+  // while still landing in the same account.
+  const business = req.query.business || req.body.business || "";
+
   const { name, email, company, phone, message, website } = req.body;
 
   // Honeypot: real visitors never see or fill this hidden field, bots often do.
@@ -324,6 +332,7 @@ router.post("/capture", cors(), (req, res) => {
     dateAdded: now,
     notes: message ?? "",
     ...newLeadDefaults(),
+    business,
     source: "webform",
   });
 
@@ -342,6 +351,7 @@ router.get("/:id", requireAuth, (req, res) => {
 router.post("/", requireAuth, (req, res) => {
   const {
     name,
+    business,
     company,
     email,
     phone,
@@ -375,6 +385,7 @@ router.post("/", requireAuth, (req, res) => {
     dateAdded: now,
     notes: notes ?? "",
     ...newLeadDefaults(),
+    business: business ?? "",
     emailOneSentDate: messageSent ? now : null,
     lastReplyDate: parseDateOrNull(lastReplyDate),
     replyMessage: replyMessage ?? "",
@@ -421,7 +432,7 @@ router.delete("/:id", requireAuth, (req, res) => {
 
 /** Bulk actions: change status or add a note-tag across multiple leads at once. */
 router.patch("/bulk", requireAuth, (req, res) => {
-  const { ids, status, tag } = req.body;
+  const { ids, status, tag, business } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ error: "ids array is required" });
   }
@@ -432,6 +443,7 @@ router.patch("/bulk", requireAuth, (req, res) => {
 
     const patch = { lastUpdated: new Date().toISOString() };
     if (status) patch.status = status;
+    if (business !== undefined) patch.business = business;
     if (tag) {
       patch.notes = lead.notes ? `${lead.notes} #${tag}` : `#${tag}`;
     }

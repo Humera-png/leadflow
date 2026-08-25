@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client.js";
 
 const SAMPLE = { name: "Sample Lead", company: "Acme Co" };
+const DEFAULT_BUSINESSES = ["Freelance", "NaviaLabs"];
 
 function render(text) {
   return text.replaceAll("{{name}}", SAMPLE.name).replaceAll("{{company}}", SAMPLE.company);
 }
 
-const emptyForm = { name: "", subject: "", body: "" };
+const emptyForm = { name: "", business: "", subject: "", body: "" };
 
 export default function Templates() {
   const [templates, setTemplates] = useState([]);
@@ -37,9 +38,9 @@ export default function Templates() {
     setIsNew(false);
   };
 
-  const startNew = () => {
+  const startNew = (business = "") => {
     setSelectedId(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm, business });
     setIsNew(true);
   };
 
@@ -67,14 +68,22 @@ export default function Templates() {
     load();
   };
 
+  // Group by business so it's obvious at a glance which set is which — unknown/blank
+  // business goes last under "Other".
+  const businessNames = [...new Set([...DEFAULT_BUSINESSES, ...templates.map((t) => t.business).filter(Boolean)])];
+  const groups = businessNames
+    .map((business) => ({ business, items: templates.filter((t) => t.business === business) }))
+    .concat([{ business: "", items: templates.filter((t) => !t.business) }])
+    .filter((g) => g.items.length > 0 || DEFAULT_BUSINESSES.includes(g.business));
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Email Templates</h1>
-          <p className="text-sm text-slate-500">Reusable sequences with {"{{name}}"} / {"{{company}}"} variables.</p>
+          <p className="text-sm text-slate-500">Reusable sequences with {"{{name}}"} / {"{{company}}"} variables, per business.</p>
         </div>
-        <button className="btn-primary" onClick={startNew}>
+        <button className="btn-primary" onClick={() => startNew()}>
           + New Template
         </button>
       </div>
@@ -82,32 +91,63 @@ export default function Templates() {
       {error && <p className="text-red-600">{error}</p>}
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <div className="card divide-y divide-slate-100 lg:col-span-1">
-          {templates.map((t) => (
-            <button
-              key={t._id}
-              onClick={() => select(t)}
-              className={`block w-full px-4 py-3 text-left text-sm hover:bg-slate-50 ${
-                selectedId === t._id ? "bg-indigo-50" : ""
-              }`}
-            >
-              <p className="font-medium text-slate-900">{t.name}</p>
-              <p className="truncate text-slate-500">{t.subject}</p>
-            </button>
+        <div className="lg:col-span-1 space-y-4">
+          {groups.map((group) => (
+            <div key={group.business || "other"} className="card divide-y divide-slate-100">
+              <div className="flex items-center justify-between px-4 py-2.5">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  {group.business || "Other"}
+                </h2>
+                <button
+                  className="text-xs font-medium text-indigo-600 hover:underline"
+                  onClick={() => startNew(group.business)}
+                >
+                  + Add
+                </button>
+              </div>
+              {group.items.map((t) => (
+                <button
+                  key={t._id}
+                  onClick={() => select(t)}
+                  className={`block w-full px-4 py-3 text-left text-sm hover:bg-slate-50 ${
+                    selectedId === t._id ? "bg-indigo-50" : ""
+                  }`}
+                >
+                  <p className="font-medium text-slate-900">{t.name}</p>
+                  <p className="truncate text-slate-500">{t.subject}</p>
+                </button>
+              ))}
+              {group.items.length === 0 && <p className="px-4 py-3 text-sm text-slate-400">No templates yet.</p>}
+            </div>
           ))}
-          {templates.length === 0 && <p className="p-4 text-sm text-slate-500">No templates yet.</p>}
         </div>
 
         <div className="card p-5 lg:col-span-1">
           <form onSubmit={save} className="space-y-3">
-            <Field label="Template name">
-              <input
-                className="input"
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                required
-              />
-            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Template name">
+                <input
+                  className="input"
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  required
+                />
+              </Field>
+              <Field label="Business">
+                <input
+                  className="input"
+                  list="template-business-options"
+                  value={form.business ?? ""}
+                  onChange={(e) => setForm((f) => ({ ...f, business: e.target.value }))}
+                  placeholder="e.g. Freelance"
+                />
+                <datalist id="template-business-options">
+                  {DEFAULT_BUSINESSES.map((b) => (
+                    <option key={b} value={b} />
+                  ))}
+                </datalist>
+              </Field>
+            </div>
             <Field label="Subject">
               <input
                 className="input"

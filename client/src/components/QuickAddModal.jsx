@@ -15,6 +15,7 @@ const DEAL_STATUSES = ["Pending", "Won", "Lost"];
 export default function QuickAddModal({ onClose, onSave }) {
   const [form, setForm] = useState({
     name: "",
+    business: "",
     company: "",
     email: "",
     phone: "",
@@ -64,6 +65,14 @@ export default function QuickAddModal({ onClose, onSave }) {
             <input className="input" value={form.company} onChange={update("company")} required />
           </Field>
         </div>
+
+        <Field label="Business">
+          <input className="input" list="business-options" value={form.business} onChange={update("business")} placeholder="e.g. Freelance, NaviaLabs" />
+          <datalist id="business-options">
+            <option value="Freelance" />
+            <option value="NaviaLabs" />
+          </datalist>
+        </Field>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Email *">

@@ -6,7 +6,9 @@ const router = Router();
 router.use(requireAuth);
 
 router.get("/", (req, res) => {
-  res.json(emailTemplates.find((t) => t.ownerId === req.userId));
+  let results = emailTemplates.find((t) => t.ownerId === req.userId);
+  if (req.query.business) results = results.filter((t) => t.business === req.query.business);
+  res.json(results);
 });
 
 router.get("/:id", (req, res) => {
@@ -16,7 +18,7 @@ router.get("/:id", (req, res) => {
 });
 
 router.post("/", (req, res) => {
-  const { name, subject, body } = req.body;
+  const { name, business, subject, body } = req.body;
   if (!name || !subject || !body) {
     return res.status(400).json({ error: "name, subject and body are required" });
   }
@@ -24,6 +26,7 @@ router.post("/", (req, res) => {
   const template = emailTemplates.insert({
     ownerId: req.userId,
     name,
+    business: business ?? "",
     subject,
     body,
     variables: [...new Set(variables)],
