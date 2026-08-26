@@ -197,7 +197,11 @@ async function rowsFromExcel(buffer) {
 }
 
 function rowsFromCsv(text) {
-  const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+  // Strip a UTF-8 BOM if present — Excel's "CSV UTF-8" export prepends one, which
+  // otherwise silently turns the first header ("Name") into an unmatchable
+  // "﻿Name" and makes every row look like it's missing a name.
+  const clean = text.replace(/^﻿/, "");
+  const parsed = Papa.parse(clean, { header: true, skipEmptyLines: true });
   if (parsed.errors?.length) {
     const err = new Error("Failed to parse CSV");
     err.details = parsed.errors.slice(0, 5);
@@ -206,56 +210,77 @@ function rowsFromCsv(text) {
   return parsed.data;
 }
 
+function normalizeHeader(key) {
+  return key
+    .replace(/^﻿/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Forgiving column lookup: matches a header regardless of case, surrounding
+ * whitespace, punctuation, or a stray BOM — real-world spreadsheet exports are
+ * rarely byte-for-byte identical to our template headers.
+ */
+function field(row, ...names) {
+  const targets = names.map(normalizeHeader);
+  for (const key of Object.keys(row)) {
+    if (targets.includes(normalizeHeader(key))) return row[key];
+  }
+  return undefined;
+}
+
 /** Same column mapping as the CSV template (see export-csv above), reused for every import format. */
 function insertLeadsFromRows(rows, ownerId) {
   let imported = 0;
   let skipped = 0;
 
   for (const row of rows) {
-    const name = String(row.Name ?? "").trim();
-    const email = String(row.Email ?? "").trim();
+    const name = String(field(row, "Name") ?? "").trim();
+    const email = String(field(row, "Email") ?? "").trim();
     if (!name || !email) {
       skipped++;
       continue;
     }
 
-    const status = normalizeStatus(row.Status);
-    const dealStatus = VALID_DEAL_STATUSES.includes(row["Deal Status (Won/Lost/Pending)"])
-      ? row["Deal Status (Won/Lost/Pending)"]
-      : "Pending";
+    const status = normalizeStatus(field(row, "Status"));
+    const dealStatusRaw = field(row, "Deal Status (Won/Lost/Pending)", "Deal Status");
+    const dealStatus = VALID_DEAL_STATUSES.includes(dealStatusRaw) ? dealStatusRaw : "Pending";
 
     const lead = leads.insert({
       ownerId,
       name,
-      business: row.Business ?? "",
-      company: row.Company ?? "",
+      business: field(row, "Business") ?? "",
+      company: field(row, "Company") ?? "",
       email,
-      phone: row.Phone ?? "",
-      linkedinUrl: row["LinkedIn URL"] ?? "",
+      phone: field(row, "Phone") ?? "",
+      linkedinUrl: field(row, "LinkedIn URL") ?? "",
       icp: false,
       status,
-      dateAdded: parseDateOrNull(row["Date Added"]) ?? new Date().toISOString(),
-      notes: row.Notes ?? "",
+      dateAdded: parseDateOrNull(field(row, "Date Added")) ?? new Date().toISOString(),
+      notes: field(row, "Notes") ?? "",
 
-      emailOneSentDate: parseDateOrNull(row["Email One Sent(Date)"]),
-      email1Opened: parseYesNo(row["Email 1 Opened"]),
-      emailTwoSentDate: parseDateOrNull(row["Email Two Sent(Date)"]),
-      email2Opened: parseYesNo(row["Email 2 Opened"]),
-      emailThreeSentDate: parseDateOrNull(row["Email Three Sent(Date)"]),
-      email3Opened: parseYesNo(row["Email 3 Opened"]),
+      emailOneSentDate: parseDateOrNull(field(row, "Email One Sent(Date)", "Email One Sent")),
+      email1Opened: parseYesNo(field(row, "Email 1 Opened")),
+      emailTwoSentDate: parseDateOrNull(field(row, "Email Two Sent(Date)", "Email Two Sent")),
+      email2Opened: parseYesNo(field(row, "Email 2 Opened")),
+      emailThreeSentDate: parseDateOrNull(field(row, "Email Three Sent(Date)", "Email Three Sent")),
+      email3Opened: parseYesNo(field(row, "Email 3 Opened")),
 
-      lastReplyDate: parseDateOrNull(row["Last Reply (Date)"]),
-      replyMessage: row["Reply Message"] ?? "",
+      lastReplyDate: parseDateOrNull(field(row, "Last Reply (Date)", "Last Reply")),
+      replyMessage: field(row, "Reply Message") ?? "",
 
-      calendarLinkSentDate: parseDateOrNull(row["Calendar Link Sent (Date)"]),
-      callBooked: parseYesNo(row["Call Booked (Yes/No)"]),
-      meetingDatetime: parseDateOrNull(row["Meeting Date & Time"]),
-      callDuration: row["Call Duration (mins)"] ? parseNumber(row["Call Duration (mins)"], null) : null,
+      calendarLinkSentDate: parseDateOrNull(field(row, "Calendar Link Sent (Date)", "Calendar Link Sent")),
+      callBooked: parseYesNo(field(row, "Call Booked (Yes/No)", "Call Booked")),
+      meetingDatetime: parseDateOrNull(field(row, "Meeting Date & Time", "Meeting Date and Time")),
+      callDuration: field(row, "Call Duration (mins)", "Call Duration")
+        ? parseNumber(field(row, "Call Duration (mins)", "Call Duration"), null)
+        : null,
 
       dealStatus,
-      dealValue: parseNumber(row["Deal Value (₹)"], 0),
-      nextAction: row["Next Action"] ?? "",
-      lastUpdated: parseDateOrNull(row["Last Updated"]) ?? new Date().toISOString(),
+      dealValue: parseNumber(field(row, "Deal Value (₹)", "Deal Value"), 0),
+      nextAction: field(row, "Next Action") ?? "",
+      lastUpdated: parseDateOrNull(field(row, "Last Updated")) ?? new Date().toISOString(),
       source: "import",
     });
 
