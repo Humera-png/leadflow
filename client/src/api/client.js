@@ -42,6 +42,7 @@ export const api = {
   getMe: () => request("/account/me"),
   regenerateApiKey: () => request("/account/api-key/regenerate", { method: "POST" }),
   regenerateCaptureToken: () => request("/account/capture-token/regenerate", { method: "POST" }),
+  setSheetSyncUrl: (url) => request("/account/sheet-sync", { method: "PUT", body: JSON.stringify({ url }) }),
 
   // Leads
   getLeads: (params = {}) => {
@@ -59,6 +60,7 @@ export const api = {
     return request("/leads/import-csv", { method: "POST", body: form });
   },
   exportLeadsCsvUrl: () => `${BASE}/leads/export-csv`,
+  syncSheetNow: () => request("/leads/sync-sheet", { method: "POST" }),
   submitCapture: (data, captureToken) =>
     request(`/leads/capture?key=${encodeURIComponent(captureToken)}`, { method: "POST", body: JSON.stringify(data) }),
 

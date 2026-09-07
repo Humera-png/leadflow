@@ -14,8 +14,8 @@
     "express": "^4.19.2",
     "googleapis": "^174.0.0",
     "jsonwebtoken": "^9.0.3",
-    "mongodb": "^7.5.0",
     "multer": "^2.2.0",
-    "papaparse": "^5.5.4"
+    "papaparse": "^5.5.4",
+    "pg": "^8.23.0"
   }
 }

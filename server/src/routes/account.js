@@ -69,4 +69,17 @@ router.post("/capture-token/regenerate", requireAuth, (req, res) => {
   res.json(publicUser(updated));
 });
 
+// Connects (or disconnects, with an empty url) a Google Sheet as a live lead source.
+// The sheet must be shared as "Anyone with the link -> Viewer" — see services/sheetSync.js.
+router.put("/sheet-sync", requireAuth, (req, res) => {
+  const url = String(req.body?.url ?? "").trim();
+  const updated = users.update(req.userId, {
+    sheetSyncUrl: url || null,
+    sheetSyncLastRunAt: null,
+    sheetSyncLastResult: null,
+    sheetSyncLastError: null,
+  });
+  res.json(publicUser(updated));
+});
+
 export default router;

@@ -30,7 +30,9 @@ function nextActionSuggestion(lead, sequence) {
     case "hot":
       return "Call is booked — follow up right after with next steps.";
     case "followup":
-      return "They said not now — check back later.";
+      return lead.snoozeUntil
+        ? `They said not now — paused until ${new Date(lead.snoozeUntil).toLocaleDateString()}.`
+        : "They said not now — check back later.";
     case "customer":
       return "Deal closed — keep them warm for referrals/upsells.";
     case "rejected":
@@ -154,6 +156,13 @@ export default function LeadDetail() {
         </dl>
         {lead.notes && <p className="mt-3 rounded-md bg-slate-50 p-3 text-sm text-slate-600">{lead.notes}</p>}
 
+        {lead.snoozeUntil && (
+          <p className="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-800">
+            ⏸ No emails will be sent until <strong>{new Date(lead.snoozeUntil).toLocaleDateString()}</strong> — they
+            asked not to be contacted before then.
+          </p>
+        )}
+
         <div className="mt-4 flex flex-wrap gap-2">
           <button className="btn-secondary" onClick={() => setShowEdit(true)}>
             Edit
@@ -161,6 +170,29 @@ export default function LeadDetail() {
           <button className="btn-secondary text-red-600" onClick={deleteLead}>
             Delete
           </button>
+          {lead.snoozeUntil ? (
+            <button
+              disabled={busy}
+              className="btn-secondary"
+              onClick={() => quickUpdate({ snoozeUntil: null })}
+            >
+              Clear snooze
+            </button>
+          ) : (
+            <button
+              disabled={busy}
+              className="btn-secondary"
+              onClick={() => {
+                const months = window.prompt("Don't contact them again for how many months?", "6");
+                if (!months || Number.isNaN(Number(months))) return;
+                const until = new Date();
+                until.setMonth(until.getMonth() + Number(months));
+                quickUpdate({ status: "followup", snoozeUntil: until.toISOString() });
+              }}
+            >
+              Snooze (not now)
+            </button>
+          )}
           {(lead.status === "cold" || lead.status === "warm") && (
             <button disabled={busy} className="btn-secondary" onClick={() => setShowReplyModal(true)}>
               Mark as Replied

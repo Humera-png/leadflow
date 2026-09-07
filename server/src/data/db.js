@@ -1,22 +1,30 @@
-import { MongoClient } from "mongodb";
+import pg from "pg";
 
-let client = null;
-let db = null;
+const { Pool } = pg;
 
-/** Connects to MongoDB Atlas if MONGODB_URI is set. Returns the db handle, or null in mock/in-memory mode. */
-export async function connectMongo() {
-  if (!process.env.MONGODB_URI) return null;
-  client = new MongoClient(process.env.MONGODB_URI);
-  await client.connect();
-  db = client.db(); // uses the database name embedded in the URI
-  console.log("[mongo] connected");
-  return db;
+let pool = null;
+
+const TABLES = ["leads", "sequences", "conversations", "emailTemplates", "meetings", "users"];
+
+export function isPostgresConfigured() {
+  return Boolean(process.env.DATABASE_URL);
 }
 
-export function getDb() {
-  return db;
+/** Connects to Postgres (Neon) if DATABASE_URL is set. Returns the pool, or null in mock/in-memory mode. */
+export async function connectPostgres() {
+  if (!isPostgresConfigured()) return null;
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+  });
+  await pool.query("select 1");
+  for (const table of TABLES) {
+    await pool.query(`create table if not exists ${table} (id text primary key, data jsonb not null)`);
+  }
+  console.log("[postgres] connected");
+  return pool;
 }
 
-export function isMongoConfigured() {
-  return Boolean(process.env.MONGODB_URI);
+export function getPool() {
+  return pool;
 }

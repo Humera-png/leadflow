@@ -6,6 +6,7 @@ import ExcelJS from "exceljs";
 import { leads, sequences, conversations, users } from "../data/store.js";
 import { onLeadCreated, hydrateFromImport } from "../services/automation.js";
 import { requireAuth } from "../middleware/auth.js";
+import { syncUserSheet } from "../services/sheetSync.js";
 
 const router = Router();
 const IMPORT_EXTENSIONS = [".csv", ".xlsx", ".xls"];
@@ -42,6 +43,14 @@ function newLeadDefaults() {
     dealStatus: "Pending",
     dealValue: 0,
     nextAction: "",
+    // AI-generated, per-lead personalized opening line (e.g. from a prospecting
+    // pipeline that read the lead's website) — filled into templates via {{icebreaker}}.
+    icebreaker: "",
+    // When set, no auto-sequence email goes out to this lead until this date —
+    // e.g. a prospect said "not now, check back in 6 months". Both LeadFlow's
+    // own automation and any external automation (n8n, etc.) should check this
+    // before sending anything.
+    snoozeUntil: null,
     lastUpdated: new Date().toISOString(),
     source: "manual", // manual | import | webform | calendly — where this lead came from
     business: "", // free-text tag (e.g. "Freelance", "NaviaLabs") — one account, multiple businesses
@@ -144,7 +153,9 @@ router.get("/export-csv", requireAuth, (req, res) => {
     "Deal Status (Won/Lost/Pending)": l.dealStatus ?? "Pending",
     "Deal Value (₹)": l.dealValue ?? 0,
     Notes: l.notes ?? "",
+    Icebreaker: l.icebreaker ?? "",
     "Next Action": l.nextAction ?? "",
+    "Follow Up After": l.snoozeUntil ?? "",
     "Last Updated": l.lastUpdated ?? "",
     Source: l.source ?? "manual",
   }));
@@ -196,7 +207,7 @@ async function rowsFromExcel(buffer) {
   return rows;
 }
 
-function rowsFromCsv(text) {
+export function rowsFromCsv(text) {
   // Strip a UTF-8 BOM if present — Excel's "CSV UTF-8" export prepends one, which
   // otherwise silently turns the first header ("Name") into an unmatchable
   // "﻿Name" and makes every row look like it's missing a name.
@@ -231,15 +242,27 @@ function field(row, ...names) {
 }
 
 /** Same column mapping as the CSV template (see export-csv above), reused for every import format. */
-function insertLeadsFromRows(rows, ownerId) {
+export function insertLeadsFromRows(rows, ownerId) {
   let imported = 0;
   let skipped = 0;
+  let duplicates = 0;
+
+  // Case-insensitive lookup of this owner's existing emails, built once — re-importing
+  // the same file (or syncing the same Sheet repeatedly) must never create duplicate
+  // leads, it should just leave the existing one alone.
+  const existingEmails = new Set(
+    leads.find((l) => l.ownerId === ownerId).map((l) => l.email.toLowerCase())
+  );
 
   for (const row of rows) {
     const name = String(field(row, "Name") ?? "").trim();
     const email = String(field(row, "Email") ?? "").trim();
     if (!name || !email) {
       skipped++;
+      continue;
+    }
+    if (existingEmails.has(email.toLowerCase())) {
+      duplicates++;
       continue;
     }
 
@@ -280,15 +303,18 @@ function insertLeadsFromRows(rows, ownerId) {
       dealStatus,
       dealValue: parseNumber(field(row, "Deal Value (₹)", "Deal Value"), 0),
       nextAction: field(row, "Next Action") ?? "",
+      icebreaker: field(row, "Icebreaker") ?? "",
+      snoozeUntil: parseDateOrNull(field(row, "Follow Up After", "Snooze Until")),
       lastUpdated: parseDateOrNull(field(row, "Last Updated")) ?? new Date().toISOString(),
       source: "import",
     });
 
     hydrateFromImport(lead);
+    existingEmails.add(email.toLowerCase()); // guards against duplicate rows within the same file/sheet
     imported++;
   }
 
-  return { imported, skipped, total: rows.length };
+  return { imported, skipped, duplicates, total: rows.length };
 }
 
 // Accepts .csv, .xlsx, or .xls — same column mapping either way (see export-csv above
@@ -307,6 +333,20 @@ router.post("/import-csv", requireAuth, upload.single("file"), async (req, res) 
     res.status(201).json(insertLeadsFromRows(rows, req.userId));
   } catch (err) {
     res.status(400).json({ error: err.message, details: err.details });
+  }
+});
+
+// Manually trigger a sync against whichever Google Sheet the account has connected
+// (see /api/account/sheet-sync). Also runs automatically on an interval — see index.js.
+router.post("/sync-sheet", requireAuth, async (req, res) => {
+  try {
+    const result = await syncUserSheet(req.user);
+    if (!result) {
+      return res.status(400).json({ error: "No Google Sheet connected yet — add one in Settings first." });
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 

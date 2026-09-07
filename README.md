@@ -31,7 +31,7 @@ Open http://localhost:5173.
 
 All four integrations below are **fully coded** — they run in mock mode with zero setup, and switch to the real thing automatically the moment their env vars are set (no code changes needed). See "Turning on real integrations" for exact setup steps per service.
 
-- **Data persistence**: in-memory by default (resets on restart/redeploy). Set `MONGODB_URI` and it becomes a write-through cache instead — reads still hit memory (fast, zero risk to existing code), every write also goes to MongoDB, and the app reloads everything from Mongo on boot. Data survives restarts once this is set.
+- **Data persistence**: in-memory by default (resets on restart/redeploy). Set `DATABASE_URL` (a Postgres connection string, e.g. from Neon) and it becomes a write-through cache instead — reads still hit memory (fast, zero risk to existing code), every write also goes to Postgres, and the app reloads everything from Postgres on boot. Data survives restarts once this is set.
 - **Gmail**: mocked (logged to console) until `GOOGLE_CLIENT_ID`/`SECRET`/`REFRESH_TOKEN` are set — then it really sends via the Gmail API as whichever account completed the one-time OAuth flow, with an invisible open-tracking pixel embedded (reuses the existing `/api/emails/:leadId/open` endpoint).
 - **Google Calendar**: same OAuth credentials — once set, "Book a call" creates a real event on your primary Google Calendar and emails a real invite to the lead.
 - **Calendly**: mocked until `CALENDLY_CLIENT_ID`/`SECRET`/tokens are set — then the Calendar page shows your real Calendly scheduling link, and real bookings on it automatically create/update leads via a webhook.
@@ -54,11 +54,11 @@ All four integrations below are **fully coded** — they run in mock mode with z
 4. Visit `/api/calendly/setup-webhook` once (registers the webhook — needs `PUBLIC_BASE_URL` set to the backend's own public URL first, so Calendly knows where to send booking notifications).
 5. The Calendar page will now show your real scheduling link at the top.
 
-### MongoDB Atlas
+### Neon (Postgres)
 
-1. Create a free cluster at [mongodb.com/cloud/atlas](https://www.mongodb.com/cloud/atlas), create a database user, and allow network access from anywhere (or Railway's IP range).
-2. Copy the connection string, set it as `MONGODB_URI`.
-3. Restart — first boot with an empty database seeds the 3 templates once; every subsequent boot loads whatever's actually in Mongo instead.
+1. Create a free project at [neon.tech](https://neon.tech), copy its connection string.
+2. Set it as `DATABASE_URL` (locally in `server/.env` — never in `.env.example`, in production via `railway variable set`).
+3. Restart — on first boot the app creates one JSONB table per collection (`leads`, `sequences`, `conversations`, `emailTemplates`, `meetings`, `users`) if they don't exist yet, then seeds the default templates once for an empty database. Every subsequent boot loads whatever's actually in Postgres instead, so signups/leads/templates survive restarts and redeploys.
 
 ## Embedding the capture form
 
@@ -116,7 +116,7 @@ cd server && npx @railway/cli up -c
 Environment variables (see `server/.env.example`), set via `npx @railway/cli variable set KEY=value`:
 - `CLIENT_ORIGIN` — already set to the Vercel frontend URL (comma-separate multiple origins if needed).
 - `PUBLIC_BASE_URL` — already set to this backend's own Railway URL (needed for the email tracking pixel and the Calendly webhook URL).
-- `GOOGLE_CLIENT_ID` / `SECRET` / `REDIRECT_URI` / `REFRESH_TOKEN`, `CALENDLY_CLIENT_ID` / `SECRET` / tokens, `MONGODB_URI` — see "Turning on real integrations" above.
+- `GOOGLE_CLIENT_ID` / `SECRET` / `REDIRECT_URI` / `REFRESH_TOKEN`, `CALENDLY_CLIENT_ID` / `SECRET` / tokens, `DATABASE_URL` — see "Turning on real integrations" above.
 
 To get a public URL: `npx @railway/cli domain` (already done — see live link above).
 

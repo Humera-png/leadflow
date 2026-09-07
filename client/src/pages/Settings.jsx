@@ -7,8 +7,43 @@ export default function Settings() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [captureBusiness, setCaptureBusiness] = useState("");
+  const [sheetUrl, setSheetUrl] = useState(user?.sheetSyncUrl ?? "");
+  const [sheetMsg, setSheetMsg] = useState("");
 
   if (!user) return null;
+
+  const saveSheetUrl = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    setSheetMsg("");
+    try {
+      await api.setSheetSyncUrl(sheetUrl);
+      await refresh();
+      setSheetMsg("Saved.");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const syncNow = async () => {
+    setBusy(true);
+    setError("");
+    setSheetMsg("");
+    try {
+      const result = await api.syncSheetNow();
+      await refresh();
+      setSheetMsg(
+        `Synced: ${result.imported} new lead${result.imported === 1 ? "" : "s"} added, ${result.duplicates} already had it, ${result.skipped} skipped (missing name/email).`
+      );
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const captureUrl = `${window.location.origin}/capture?key=${user.captureToken}${captureBusiness ? `&business=${encodeURIComponent(captureBusiness)}` : ""}`;
 
@@ -78,6 +113,35 @@ export default function Settings() {
           Use a separate embed per business (same key, different <code className="rounded bg-slate-100 px-0.5">&amp;business=</code> value)
           if you want each site's form to land in the right bucket. Regenerating invalidates the old embed link — update it anywhere it's embedded.
         </p>
+      </div>
+
+      <div className="card p-5">
+        <h2 className="mb-1 text-sm font-semibold text-slate-900">Google Sheet Sync</h2>
+        <p className="mb-3 text-sm text-slate-500">
+          Connect a Google Sheet and LeadFlow pulls in any rows you add there automatically — every
+          30 minutes, and any time you click "Sync now". Leads already in your account (matched by
+          email) are never duplicated. The sheet must be shared as{" "}
+          <strong>"Anyone with the link → Viewer"</strong>.
+        </p>
+        <form onSubmit={saveSheetUrl} className="flex items-center gap-2">
+          <input
+            className="input flex-1"
+            placeholder="https://docs.google.com/spreadsheets/d/..."
+            value={sheetUrl}
+            onChange={(e) => setSheetUrl(e.target.value)}
+          />
+          <button className="btn-secondary" disabled={busy} type="submit">
+            Save
+          </button>
+          <button className="btn-primary" disabled={busy || !user.sheetSyncUrl} type="button" onClick={syncNow}>
+            Sync now
+          </button>
+        </form>
+        {sheetMsg && <p className="mt-2 text-sm text-emerald-700">{sheetMsg}</p>}
+        {user.sheetSyncLastRunAt && (
+          <p className="mt-2 text-xs text-slate-400">Last synced: {new Date(user.sheetSyncLastRunAt).toLocaleString()}</p>
+        )}
+        {user.sheetSyncLastError && <p className="mt-2 text-xs text-red-600">Last sync failed: {user.sheetSyncLastError}</p>}
       </div>
     </div>
   );

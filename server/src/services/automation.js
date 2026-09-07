@@ -68,6 +68,8 @@ const TEMPLATE_ORDER = [
 async function sendNextSequenceEmail(sequence) {
   const lead = leads.get(sequence.leadId);
   if (!lead || lead.status !== "cold") return null;
+  // Snoozed lead ("not now, check back later") — skip until the date passes.
+  if (lead.snoozeUntil && new Date(lead.snoozeUntil) > new Date()) return null;
 
   const step = TEMPLATE_ORDER.find((s) => !sequence[s.field]?.date);
   if (!step) return null;

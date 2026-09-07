@@ -6,7 +6,8 @@ export function renderTemplate(template, lead) {
   const fill = (text) =>
     text
       .replaceAll("{{name}}", lead.name ?? "there")
-      .replaceAll("{{company}}", lead.company ?? "your company");
+      .replaceAll("{{company}}", lead.company ?? "your company")
+      .replaceAll("{{icebreaker}}", lead.icebreaker ?? "");
 
   return {
     subject: fill(template.subject),

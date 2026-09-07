@@ -10,11 +10,12 @@ import conversationsRouter from "./routes/conversations.js";
 import authRouter from "./routes/auth.js";
 import calendlyRouter from "./routes/calendly.js";
 import accountRouter from "./routes/account.js";
-import { hydrateFromMongo } from "./data/store.js";
+import { hydrateFromDb } from "./data/store.js";
 import { processDueActions } from "./services/automation.js";
 import { isGmailConfigured } from "./services/emailService.js";
 import { isCalendarConfigured } from "./services/calendarService.js";
-import { isMongoConfigured } from "./data/db.js";
+import { isPostgresConfigured } from "./data/db.js";
+import { syncAllUserSheets } from "./services/sheetSync.js";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -31,7 +32,7 @@ app.get("/api/health", (req, res) => {
     ok: true,
     gmailConfigured: isGmailConfigured(),
     calendarConfigured: isCalendarConfigured(),
-    mongoConfigured: isMongoConfigured(),
+    dbConfigured: isPostgresConfigured(),
   });
 });
 
@@ -52,14 +53,15 @@ app.use((err, req, res, next) => {
 });
 
 const AUTOMATION_INTERVAL_MS = 60 * 1000;
+const SHEET_SYNC_INTERVAL_MS = 30 * 60 * 1000; // every 30 min — connected Google Sheets, per account
 
 async function start() {
   if (!process.env.JWT_SECRET) {
     console.error("JWT_SECRET is not set — signup/login will fail. Set it and restart.");
   }
 
-  const mongoHydrated = await hydrateFromMongo().catch((err) => {
-    console.error("[mongo] connection failed, falling back to in-memory only:", err.message);
+  const dbHydrated = await hydrateFromDb().catch((err) => {
+    console.error("[postgres] connection failed, falling back to in-memory only:", err.message);
     return false;
   });
 
@@ -67,10 +69,14 @@ async function start() {
     processDueActions().catch((err) => console.error("automation tick failed", err));
   }, AUTOMATION_INTERVAL_MS);
 
+  setInterval(() => {
+    syncAllUserSheets().catch((err) => console.error("sheet sync tick failed", err));
+  }, SHEET_SYNC_INTERVAL_MS);
+
   app.listen(PORT, () => {
     console.log(`LeadFlow API running on http://localhost:${PORT}`);
     console.log(
-      `Gmail: ${isGmailConfigured() ? "live" : "mock"} | Calendar: ${isCalendarConfigured() ? "live" : "mock"} | Mongo: ${mongoHydrated ? "connected" : "in-memory only"}`
+      `Gmail: ${isGmailConfigured() ? "live" : "mock"} | Calendar: ${isCalendarConfigured() ? "live" : "mock"} | DB: ${dbHydrated ? "connected" : "in-memory only"}`
     );
   });
 }

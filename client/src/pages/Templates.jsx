@@ -1,11 +1,18 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client.js";
 
-const SAMPLE = { name: "Sample Lead", company: "Acme Co" };
+const SAMPLE = {
+  name: "Sample Lead",
+  company: "Acme Co",
+  icebreaker: "Noticed Acme Co just launched a subscription box — that's a smart move for repeat orders.",
+};
 const DEFAULT_BUSINESSES = ["Freelance", "NaviaLabs"];
 
 function render(text) {
-  return text.replaceAll("{{name}}", SAMPLE.name).replaceAll("{{company}}", SAMPLE.company);
+  return text
+    .replaceAll("{{name}}", SAMPLE.name)
+    .replaceAll("{{company}}", SAMPLE.company)
+    .replaceAll("{{icebreaker}}", SAMPLE.icebreaker);
 }
 
 const emptyForm = { name: "", business: "", subject: "", body: "" };
@@ -165,7 +172,10 @@ export default function Templates() {
                 required
               />
             </Field>
-            <p className="text-xs text-slate-400">Use {"{{name}}"} and {"{{company}}"} — they get filled in automatically.</p>
+            <p className="text-xs text-slate-400">
+              Use {"{{name}}"}, {"{{company}}"}, and {"{{icebreaker}}"} — they get filled in automatically
+              ({"{{icebreaker}}"} is blank unless a lead has a personalized opener, e.g. from a prospecting pipeline).
+            </p>
             <div className="flex gap-2">
               <button className="btn-primary" type="submit">
                 {isNew ? "Create template" : "Save changes"}
