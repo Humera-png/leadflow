@@ -4,7 +4,7 @@ const { Pool } = pg;
 
 let pool = null;
 
-const TABLES = ["leads", "sequences", "conversations", "emailTemplates", "meetings", "users"];
+const TABLES = ["leads", "sequences", "conversations", "emailTemplates", "meetings", "users", "notifications"];
 
 export function isPostgresConfigured() {
   return Boolean(process.env.DATABASE_URL);

@@ -10,6 +10,7 @@ import conversationsRouter from "./routes/conversations.js";
 import authRouter from "./routes/auth.js";
 import calendlyRouter from "./routes/calendly.js";
 import accountRouter from "./routes/account.js";
+import notificationsRouter from "./routes/notifications.js";
 import { hydrateFromDb } from "./data/store.js";
 import { processDueActions } from "./services/automation.js";
 import { isGmailConfigured } from "./services/emailService.js";
@@ -46,6 +47,7 @@ app.use("/api/templates", templatesRouter);
 app.use("/api/conversations", conversationsRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/calendly", calendlyRouter);
+app.use("/api/notifications", notificationsRouter);
 
 app.use((err, req, res, next) => {
   console.error(err);

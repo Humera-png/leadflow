@@ -1,4 +1,4 @@
-import { leads, sequences, conversations, emailTemplates, meetings } from "../data/store.js";
+import { leads, sequences, conversations, emailTemplates, meetings, notifications } from "../data/store.js";
 import { sendEmail, renderTemplate } from "./emailService.js";
 import { createEvent } from "./calendarService.js";
 
@@ -18,6 +18,12 @@ function daysFromNow(days) {
 /** All lead mutations go through here so `lastUpdated` always reflects reality. */
 function touchLead(leadId, patch) {
   return leads.update(leadId, { ...patch, lastUpdated: new Date().toISOString() });
+}
+
+/** In-app notification, shown as a bell-icon alert in the UI — independent of Slack. */
+function notify(ownerId, { type, message, leadId }) {
+  if (!ownerId) return;
+  notifications.insert({ ownerId, type, message, leadId: leadId ?? null, read: false, createdAt: new Date().toISOString() });
 }
 
 function getOrCreateConversation(leadId) {
@@ -127,6 +133,7 @@ export function onReplyReceived(leadId, content) {
   const now = new Date().toISOString();
   touchLead(leadId, { status: "warm", lastReplyDate: now, replyMessage: content });
   appendMessage(leadId, { from: leadId, to: "you", content, type: "reply" });
+  notify(lead.ownerId, { type: "reply", message: `${lead.name} replied: "${content}"`, leadId });
 
   const sequence = sequences.findOne((s) => s.leadId === leadId);
   if (sequence) {
@@ -175,6 +182,7 @@ export async function onCallBooked(leadId, { scheduledTime, duration = 30 }) {
     content: `Call booked for ${scheduledTime}`,
     type: "system",
   });
+  notify(lead.ownerId, { type: "call_booked", message: `Call booked with ${lead.name} for ${new Date(scheduledTime).toLocaleString()}`, leadId });
 
   return meeting;
 }
@@ -208,6 +216,7 @@ export function onDealClosed(leadId, amount) {
     content: `Deal closed: ₹${amount}`,
     type: "system",
   });
+  notify(lead.ownerId, { type: "deal_closed", message: `Deal closed with ${lead.name} — ₹${Number(amount).toLocaleString("en-IN")}`, leadId });
 
   return sequences.findOne((s) => s.leadId === leadId);
 }

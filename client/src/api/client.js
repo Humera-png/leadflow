@@ -90,6 +90,12 @@ export const api = {
   bookMeeting: (data) => request("/calendar/book", { method: "POST", body: JSON.stringify(data) }),
   getCalendlyBookingLink: () => request("/calendly/booking-link"),
 
+  // Notifications
+  getNotifications: () => request("/notifications"),
+  getUnreadCount: () => request("/notifications/unread-count"),
+  markNotificationRead: (id) => request(`/notifications/${id}/read`, { method: "POST" }),
+  markAllNotificationsRead: () => request("/notifications/read-all", { method: "POST" }),
+
   // Analytics
   getDashboard: () => request("/analytics/dashboard"),
   getFunnel: () => request("/analytics/funnel"),

@@ -94,8 +94,9 @@ export const conversations = new Collection("conversations");
 export const emailTemplates = new Collection("emailTemplates");
 export const meetings = new Collection("meetings");
 export const users = new Collection("users");
+export const notifications = new Collection("notifications");
 
-const ALL_COLLECTIONS = [leads, sequences, conversations, emailTemplates, meetings, users];
+const ALL_COLLECTIONS = [leads, sequences, conversations, emailTemplates, meetings, users, notifications];
 
 /**
  * Connects to Postgres (if configured), attaches each collection to its table,
