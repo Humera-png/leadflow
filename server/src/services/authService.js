@@ -42,3 +42,8 @@ export function generateApiKey() {
 export function generateCaptureToken() {
   return `cap_${randomBytes(16).toString("hex")}`;
 }
+
+/** Single-use, time-limited token for the forgot-password flow. */
+export function generateResetToken() {
+  return randomBytes(32).toString("hex");
+}

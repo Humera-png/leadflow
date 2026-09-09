@@ -40,6 +40,9 @@ export const api = {
   signup: (data) => request("/account/signup", { method: "POST", body: JSON.stringify(data) }),
   login: (data) => request("/account/login", { method: "POST", body: JSON.stringify(data) }),
   getMe: () => request("/account/me"),
+  forgotPassword: (email) => request("/account/forgot-password", { method: "POST", body: JSON.stringify({ email }) }),
+  resetPassword: (token, password) =>
+    request("/account/reset-password", { method: "POST", body: JSON.stringify({ token, password }) }),
   regenerateApiKey: () => request("/account/api-key/regenerate", { method: "POST" }),
   regenerateCaptureToken: () => request("/account/capture-token/regenerate", { method: "POST" }),
   setSheetSyncUrl: (url) => request("/account/sheet-sync", { method: "PUT", body: JSON.stringify({ url }) }),

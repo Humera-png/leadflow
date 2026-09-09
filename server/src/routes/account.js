@@ -8,12 +8,14 @@ import {
   signSessionToken,
   generateApiKey,
   generateCaptureToken,
+  generateResetToken,
 } from "../services/authService.js";
+import { sendEmail } from "../services/emailService.js";
 
 const router = Router();
 
 function publicUser(user) {
-  const { passwordHash, ...safe } = user;
+  const { passwordHash, resetToken, resetTokenExpiresAt, ...safe } = user;
   return safe;
 }
 
@@ -80,6 +82,52 @@ router.put("/sheet-sync", requireAuth, (req, res) => {
     sheetSyncLastError: null,
   });
   res.json(publicUser(updated));
+});
+
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+// Always responds the same way whether or not the email exists, so this can't
+// be used to check which emails have LeadFlow accounts.
+router.post("/forgot-password", async (req, res) => {
+  const email = String(req.body?.email ?? "").trim().toLowerCase();
+  const genericReply = { ok: true, message: "If that email has an account, a reset link has been sent." };
+  if (!email) return res.json(genericReply);
+
+  const user = users.findOne((u) => u.email === email);
+  if (user) {
+    const token = generateResetToken();
+    users.update(user._id, {
+      resetToken: token,
+      resetTokenExpiresAt: new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString(),
+    });
+
+    const origin = (process.env.CLIENT_ORIGIN || "").split(",")[0].trim() || "http://localhost:5173";
+    const resetUrl = `${origin}/reset-password?token=${token}`;
+
+    await sendEmail({
+      to: user.email,
+      subject: "Reset your LeadFlow password",
+      body: `Hi ${user.name || ""},\n\nSomeone (hopefully you) requested a password reset for your LeadFlow account.\n\nClick here to set a new password (link expires in 1 hour):\n${resetUrl}\n\nIf you didn't request this, you can safely ignore this email — your password won't change.`,
+    }).catch((err) => console.error("[forgot-password] email send failed:", err.message));
+  }
+
+  res.json(genericReply);
+});
+
+router.post("/reset-password", async (req, res) => {
+  const { token, password } = req.body ?? {};
+  if (!token || !password || password.length < 8) {
+    return res.status(400).json({ error: "A valid token and a password (8+ chars) are required" });
+  }
+
+  const user = users.findOne((u) => u.resetToken === token);
+  if (!user || !user.resetTokenExpiresAt || new Date(user.resetTokenExpiresAt) < new Date()) {
+    return res.status(400).json({ error: "This reset link is invalid or has expired — request a new one" });
+  }
+
+  const passwordHash = await hashPassword(password);
+  users.update(user._id, { passwordHash, resetToken: null, resetTokenExpiresAt: null });
+  res.json({ ok: true });
 });
 
 // Real phone/browser push notifications — separate from the in-app bell icon.

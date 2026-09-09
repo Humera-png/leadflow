@@ -41,6 +41,9 @@ export default function Login() {
           <span className="mb-1 block font-medium text-slate-700">Password</span>
           <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </label>
+        <p className="text-right text-xs">
+          <Link to="/forgot-password" className="text-indigo-600 hover:underline">Forgot password?</Link>
+        </p>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
