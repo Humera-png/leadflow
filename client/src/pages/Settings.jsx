@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api/client.js";
 import { useAuth } from "../AuthContext.jsx";
+import { getPushStatus, enablePush, disablePush, isPushSupported } from "../push.js";
 
 export default function Settings() {
   const { user, refresh } = useAuth();
@@ -9,6 +10,31 @@ export default function Settings() {
   const [captureBusiness, setCaptureBusiness] = useState("");
   const [sheetUrl, setSheetUrl] = useState(user?.sheetSyncUrl ?? "");
   const [sheetMsg, setSheetMsg] = useState("");
+  const [pushStatus, setPushStatus] = useState("checking");
+  const [pushMsg, setPushMsg] = useState("");
+
+  useEffect(() => {
+    if (!isPushSupported()) {
+      setPushStatus("unsupported");
+      return;
+    }
+    getPushStatus().then(setPushStatus);
+  }, []);
+
+  const togglePush = async () => {
+    setPushMsg("");
+    try {
+      if (pushStatus === "subscribed") {
+        await disablePush();
+        setPushStatus("not-subscribed");
+      } else {
+        await enablePush();
+        setPushStatus("subscribed");
+      }
+    } catch (err) {
+      setPushMsg(err.message);
+    }
+  };
 
   if (!user) return null;
 
@@ -113,6 +139,24 @@ export default function Settings() {
           Use a separate embed per business (same key, different <code className="rounded bg-slate-100 px-0.5">&amp;business=</code> value)
           if you want each site's form to land in the right bucket. Regenerating invalidates the old embed link — update it anywhere it's embedded.
         </p>
+      </div>
+
+      <div className="card p-5">
+        <h2 className="mb-1 text-sm font-semibold text-slate-900">Phone / Browser Push Notifications</h2>
+        <p className="mb-3 text-sm text-slate-500">
+          Get a real notification on your phone or computer the moment a lead replies, books a call, or closes a
+          deal — even when LeadFlow isn't open. Separate from the in-app bell icon and from Slack.
+        </p>
+        {pushStatus === "unsupported" && (
+          <p className="text-sm text-slate-400">Not supported in this browser — try Chrome or Safari on your phone.</p>
+        )}
+        {pushStatus !== "unsupported" && pushStatus !== "checking" && (
+          <button className="btn-primary" onClick={togglePush}>
+            {pushStatus === "subscribed" ? "Turn off phone notifications" : "Enable phone notifications"}
+          </button>
+        )}
+        {pushMsg && <p className="mt-2 text-sm text-red-600">{pushMsg}</p>}
+        {pushStatus === "subscribed" && <p className="mt-2 text-xs text-emerald-600">Enabled on this device.</p>}
       </div>
 
       <div className="card p-5">

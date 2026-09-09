@@ -82,4 +82,27 @@ router.put("/sheet-sync", requireAuth, (req, res) => {
   res.json(publicUser(updated));
 });
 
+// Real phone/browser push notifications — separate from the in-app bell icon.
+router.get("/vapid-public-key", (req, res) => {
+  res.json({ key: process.env.VAPID_PUBLIC_KEY ?? null });
+});
+
+router.post("/push-subscribe", requireAuth, (req, res) => {
+  const sub = req.body?.subscription;
+  if (!sub?.endpoint) return res.status(400).json({ error: "Invalid push subscription" });
+
+  const existing = req.user.pushSubscriptions ?? [];
+  const alreadySaved = existing.some((s) => s.endpoint === sub.endpoint);
+  const updated = alreadySaved ? existing : [...existing, sub];
+  users.update(req.userId, { pushSubscriptions: updated });
+  res.json({ ok: true });
+});
+
+router.post("/push-unsubscribe", requireAuth, (req, res) => {
+  const endpoint = req.body?.endpoint;
+  const existing = req.user.pushSubscriptions ?? [];
+  users.update(req.userId, { pushSubscriptions: existing.filter((s) => s.endpoint !== endpoint) });
+  res.json({ ok: true });
+});
+
 export default router;

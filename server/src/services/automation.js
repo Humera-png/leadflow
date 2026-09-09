@@ -1,4 +1,5 @@
 import { leads, sequences, conversations, emailTemplates, meetings, notifications } from "../data/store.js";
+import { sendPush } from "./pushService.js";
 import { sendEmail, renderTemplate } from "./emailService.js";
 import { createEvent } from "./calendarService.js";
 
@@ -20,10 +21,17 @@ function touchLead(leadId, patch) {
   return leads.update(leadId, { ...patch, lastUpdated: new Date().toISOString() });
 }
 
-/** In-app notification, shown as a bell-icon alert in the UI — independent of Slack. */
+/**
+ * In-app bell-icon alert + a real phone/browser push notification — both
+ * independent of Slack. Push is fire-and-forget so a slow/failed push never
+ * blocks the actual automation step that triggered it.
+ */
 function notify(ownerId, { type, message, leadId }) {
   if (!ownerId) return;
   notifications.insert({ ownerId, type, message, leadId: leadId ?? null, read: false, createdAt: new Date().toISOString() });
+  sendPush(ownerId, { title: "LeadFlow", body: message, url: leadId ? `/leads/${leadId}` : "/" }).catch((err) =>
+    console.error("[push] send failed:", err.message)
+  );
 }
 
 function getOrCreateConversation(leadId) {

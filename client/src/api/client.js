@@ -43,6 +43,11 @@ export const api = {
   regenerateApiKey: () => request("/account/api-key/regenerate", { method: "POST" }),
   regenerateCaptureToken: () => request("/account/capture-token/regenerate", { method: "POST" }),
   setSheetSyncUrl: (url) => request("/account/sheet-sync", { method: "PUT", body: JSON.stringify({ url }) }),
+  getVapidPublicKey: () => request("/account/vapid-public-key"),
+  savePushSubscription: (subscription) =>
+    request("/account/push-subscribe", { method: "POST", body: JSON.stringify({ subscription }) }),
+  removePushSubscription: (endpoint) =>
+    request("/account/push-unsubscribe", { method: "POST", body: JSON.stringify({ endpoint }) }),
 
   // Leads
   getLeads: (params = {}) => {
