@@ -255,8 +255,14 @@ export function insertLeadsFromRows(rows, ownerId) {
   );
 
   for (const row of rows) {
-    const name = String(field(row, "Name") ?? "").trim();
-    const email = String(field(row, "Email") ?? "").trim();
+    // Apollo (and some other CRMs) export "First Name"/"Last Name" as separate
+    // columns instead of one combined "Name" column — fall back to joining them.
+    const combinedName = [field(row, "First Name"), field(row, "Last Name")]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+    const name = String(field(row, "Name", "Full Name") ?? combinedName ?? "").trim();
+    const email = String(field(row, "Email", "Email Address") ?? "").trim();
     if (!name || !email) {
       skipped++;
       continue;
