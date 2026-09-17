@@ -102,6 +102,9 @@ router.get("/", requireAuth, (req, res) => {
   const { status, icp, company, search, business } = req.query;
 
   let results = leads.find((l) => l.ownerId === req.userId);
+  console.log(
+    `[DEBUG /api/leads] apiKey=${req.get("X-Api-Key")?.slice(0, 12)}... userId=${req.userId} totalLeadsInMemory=${leads.all().length} matchedForUser=${results.length} userAgent=${req.get("User-Agent")}`
+  );
   if (status) results = results.filter((l) => l.status === status);
   if (business) results = results.filter((l) => l.business === business);
   if (icp) results = results.filter((l) => String(l.icp) === String(icp === "true"));
